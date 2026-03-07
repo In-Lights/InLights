@@ -64,7 +64,10 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
     if (selected.size === 0) return;
     setBulkLoading(true);
     try {
-      await Promise.all([...selected].map(id => updateSubmissionStatus(id, status)));
+      await Promise.all([...selected].map(id => {
+        const r = submissions.find(s => s.id === id);
+        return updateSubmissionStatus(id, status, r ? `${r.mainArtist} — ${r.releaseTitle}` : id);
+      }));
       setSubmissions(prev => prev.map(r => selected.has(r.id) ? { ...r, status } : r));
       setSelected(new Set());
     } catch { alert('Some updates failed. Please retry.'); }
@@ -76,7 +79,10 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
     if (!confirm(`Delete ${selected.size} release${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
     setBulkLoading(true);
     try {
-      await Promise.all([...selected].map(id => deleteSubmission(id)));
+      await Promise.all([...selected].map(id => {
+        const r = submissions.find(s => s.id === id);
+        return deleteSubmission(id, r ? `${r.mainArtist} — ${r.releaseTitle}` : id);
+      }));
       setSubmissions(prev => prev.filter(r => !selected.has(r.id)));
       setSelected(new Set());
     } catch { alert('Some deletions failed. Please retry.'); }
@@ -123,7 +129,8 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
     if (!confirm('Are you sure you want to delete this submission?')) return;
     setActionLoading(id);
     try {
-      await deleteSubmission(id);
+      const r = submissions.find(s => s.id === id);
+      await deleteSubmission(id, r ? `${r.mainArtist} — ${r.releaseTitle}` : id);
       setSubmissions(prev => prev.filter(r => r.id !== id));
     } catch (err) {
       alert('Failed to delete. Please try again.');
@@ -135,7 +142,8 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
   const handleStatusChange = async (id: string, status: ReleaseStatus) => {
     setActionLoading(id + status);
     try {
-      await updateSubmissionStatus(id, status);
+      const r = submissions.find(s => s.id === id);
+      await updateSubmissionStatus(id, status, r ? `${r.mainArtist} — ${r.releaseTitle}` : id);
       setSubmissions(prev => prev.map(r => r.id === id ? { ...r, status } : r));
     } catch {
       alert('Failed to update status. Please try again.');

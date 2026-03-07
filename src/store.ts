@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { ReleaseSubmission, AdminSettings, DEFAULT_ADMIN_SETTINGS } from './types';
+import { ReleaseSubmission, AdminSettings, DEFAULT_ADMIN_SETTINGS, AdminRole } from './types';
 
 // ============================================================
 // Supabase Client
@@ -99,6 +99,7 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     allowCoverArtImageUrl: data.allow_cover_art_image_url ?? true,
     showArtworkPreview: data.show_artwork_preview ?? true,
     requireMixMaster: data.require_mix_master ?? false,
+    requireCredits: data.require_credits ?? false,
     requireTikTokTimestamp: data.require_tiktok_timestamp ?? false,
     maxCollaborators: data.max_collaborators ?? 0,
     maxFeatures: data.max_features ?? 0,
@@ -150,6 +151,7 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       allow_cover_art_image_url: settings.allowCoverArtImageUrl ?? true,
       show_artwork_preview: settings.showArtworkPreview ?? true,
       require_mix_master: settings.requireMixMaster ?? false,
+      require_credits: settings.requireCredits ?? false,
       require_tiktok_timestamp: settings.requireTikTokTimestamp ?? false,
       max_collaborators: settings.maxCollaborators ?? 0,
       max_features: settings.maxFeatures ?? 0,
@@ -200,6 +202,7 @@ export async function fetchPublicBranding(): Promise<Partial<AdminSettings> | nu
     allowCoverArtImageUrl: data.allow_cover_art_image_url ?? true,
     showArtworkPreview: data.show_artwork_preview ?? true,
     requireMixMaster: data.require_mix_master ?? false,
+    requireCredits: data.require_credits ?? false,
     requireTikTokTimestamp: data.require_tiktok_timestamp ?? false,
     maxCollaborators: data.max_collaborators ?? 0,
     maxFeatures: data.max_features ?? 0,
@@ -297,54 +300,113 @@ export async function getSubmissions(): Promise<ReleaseSubmission[]> {
 }
 
 export async function addSubmission(
-  submission: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt' | 'status'>
-): Promise<ReleaseSubmission> {
+  release: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt'>
+): Promise<string> {
   const id = await generateReleaseId();
   const now = new Date().toISOString();
-
   const row = {
-    ...releaseToRow({ ...submission, id }),
+    ...releaseToRow({ ...release, id }),
+    id,
     status: 'pending',
     created_at: now,
     updated_at: now,
   };
-
-  const { data, error } = await supabase
-    .from('releases')
-    .insert(row)
-    .select()
-    .single();
-
-  if (error || !data) throw new Error(error?.message ?? 'Failed to save submission');
-
-  const newRelease = rowToRelease(data);
-  sendToGoogleSheets(newRelease);
-  sendDiscordNotification(newRelease);
-
-  return newRelease;
+  const { error } = await supabase.from('releases').insert(row);
+  if (error) throw new Error(error.message);
+  const { data } = await supabase.from('releases').select().eq('id', id).single();
+  if (data) { sendToGoogleSheets(rowToRelease(data)); sendDiscordNotification(rowToRelease(data)); }
+  await logActivity('Submitted release', `${release.mainArtist} — ${release.releaseTitle}`, id, { genre: release.genre, type: release.releaseType });
+  return id;
 }
 
 export async function updateSubmission(
   id: string,
-  updates: Partial<ReleaseSubmission>
+  updates: Partial<ReleaseSubmission>,
+  label?: string
 ): Promise<void> {
-  const row = {
-    ...releaseToRow(updates),
-    updated_at: new Date().toISOString(),
-  };
+  const row = { ...releaseToRow(updates), updated_at: new Date().toISOString() };
   const { error } = await supabase.from('releases').update(row).eq('id', id);
   if (error) throw new Error(error.message);
+  if (label) await logActivity('Edited release', label, id, { fields: Object.keys(updates) });
 }
 
 export async function updateSubmissionStatus(
   id: string,
-  status: ReleaseSubmission['status']
+  status: ReleaseSubmission['status'],
+  label?: string
 ): Promise<void> {
-  return updateSubmission(id, { status });
+  await updateSubmission(id, { status });
+  await logActivity(`Status → ${status}`, label || id, id, { status });
 }
 
-export async function deleteSubmission(id: string): Promise<void> {
+export async function deleteSubmission(id: string, label?: string): Promise<void> {
+  await logActivity('Deleted release', label || id, id);
   const { error } = await supabase.from('releases').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+// ============================================================
+// Activity Log
+// ============================================================
+export interface ActivityLogEntry {
+  id: string;
+  createdAt: string;
+  adminUsername: string;
+  adminRole?: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  entityLabel?: string;
+  meta?: Record<string, unknown>;
+}
+
+export async function logActivity(
+  action: string,
+  entityLabel: string,
+  entityId?: string,
+  meta?: Record<string, unknown>,
+  entityType = 'release'
+): Promise<void> {
+  const session = getAdminSession();
+  if (!session.loggedIn) return;
+  try {
+    await supabase.from('admin_activity_log').insert({
+      admin_username: session.username || 'unknown',
+      admin_role: session.role,
+      action,
+      entity_type: entityType,
+      entity_id: entityId,
+      entity_label: entityLabel,
+      meta: meta || {},
+    });
+  } catch { /* non-blocking — log errors should never break the app */ }
+}
+
+export async function getActivityLog(limit = 100): Promise<ActivityLogEntry[]> {
+  const { data, error } = await supabase
+    .from('admin_activity_log')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return (data || []).map(r => ({
+    id: r.id as string,
+    createdAt: r.created_at as string,
+    adminUsername: r.admin_username as string,
+    adminRole: r.admin_role as string | undefined,
+    action: r.action as string,
+    entityType: r.entity_type as string,
+    entityId: r.entity_id as string | undefined,
+    entityLabel: r.entity_label as string | undefined,
+    meta: r.meta as Record<string, unknown> | undefined,
+  }));
+}
+
+export async function clearActivityLog(): Promise<void> {
+  const { error } = await supabase
+    .from('admin_activity_log')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000'); // delete all
   if (error) throw new Error(error.message);
 }
 
@@ -429,16 +491,101 @@ export function clearFormDraft(): void {
 }
 
 // ============================================================
-// Auth — in-memory session (no localStorage)
 // ============================================================
-let _adminSession: { loggedIn: boolean; expiry: number } = { loggedIn: false, expiry: 0 };
+// Auth — multi-admin session
+// ============================================================
+
+interface AdminSession {
+  loggedIn: boolean;
+  expiry: number;
+  userId?: string;
+  username?: string;
+  role?: AdminRole;
+}
+
+let _adminSession: AdminSession = { loggedIn: false, expiry: 0 };
 
 export async function loginAdmin(username: string, password: string): Promise<boolean> {
-  const settings = await getAdminSettings();
-  if (username !== settings.adminUsername) return false;
   const inputHash = await hashPassword(password);
-  return inputHash === settings.adminPasswordHash;
+
+  // Try multi-admin table first
+  const { data: users } = await supabase
+    .from('admin_users')
+    .select('*')
+    .eq('username', username.trim().toLowerCase())
+    .eq('password_hash', inputHash)
+    .single();
+
+  if (users) {
+    _adminSession = {
+      loggedIn: true,
+      expiry: Date.now() + 24 * 60 * 60 * 1000,
+      userId: users.id,
+      username: users.username,
+      role: users.role as AdminRole,
+    };
+    // Update last_login
+    await supabase.from('admin_users').update({ last_login: new Date().toISOString() }).eq('id', users.id);
+    return true;
+  }
+
+  // Fallback: legacy single-admin from settings table
+  const settings = await getAdminSettings();
+  if (username === settings.adminUsername) {
+    if (inputHash === settings.adminPasswordHash) {
+      _adminSession = {
+        loggedIn: true,
+        expiry: Date.now() + 24 * 60 * 60 * 1000,
+        username,
+        role: 'owner',
+      };
+      return true;
+    }
+  }
+  return false;
 }
+
+export async function getAdminUsers() {
+  const { data, error } = await supabase
+    .from('admin_users')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(error.message);
+  return (data || []).map(r => ({
+    id: r.id as string,
+    username: r.username as string,
+    passwordHash: r.password_hash as string,
+    role: r.role as AdminRole,
+    createdAt: r.created_at as string,
+    lastLogin: r.last_login as string | undefined,
+  }));
+}
+
+export async function createAdminUser(username: string, password: string, role: AdminRole): Promise<void> {
+  const passwordHash = await hashPassword(password);
+  const { error } = await supabase.from('admin_users').insert({
+    username: username.trim().toLowerCase(),
+    password_hash: passwordHash,
+    role,
+  });
+  if (error) throw new Error(error.message);
+}
+
+export async function updateAdminUser(id: string, updates: { username?: string; password?: string; role?: AdminRole }): Promise<void> {
+  const row: Record<string, unknown> = {};
+  if (updates.username) row.username = updates.username.trim().toLowerCase();
+  if (updates.role) row.role = updates.role;
+  if (updates.password) row.password_hash = await hashPassword(updates.password);
+  const { error } = await supabase.from('admin_users').update(row).eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function deleteAdminUser(id: string): Promise<void> {
+  const { error } = await supabase.from('admin_users').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export function getAdminSession(): AdminSession { return _adminSession; }
 
 // Save only the password hash — called separately so saveAdminSettings doesn't need the raw password
 export async function saveAdminPassword(newPassword: string): Promise<void> {

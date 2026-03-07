@@ -118,7 +118,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
         upc: upc || undefined,
         priority,
         checklist,
-      });
+      }, `${mainArtist} — ${releaseTitle}`);
       setSaved(true);
       setEditing(false);
       setTimeout(() => setSaved(false), 2000);

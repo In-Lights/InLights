@@ -14,6 +14,17 @@ export interface PlatformLinks {
   anghami?: string;
 }
 
+export type AdminRole = 'owner' | 'admin' | 'reviewer';
+
+export interface AdminUser {
+  id: string;
+  username: string;
+  passwordHash: string;
+  role: AdminRole;
+  createdAt: string;
+  lastLogin?: string;
+}
+
 export interface Collaborator {
   name: string;
   role: string;
@@ -117,6 +128,7 @@ export interface AdminSettings {
   allowCoverArtImageUrl: boolean;     // Let artists paste a direct image URL for preview
   showArtworkPreview: boolean;        // Show live image preview in form
   requireMixMaster: boolean;          // Require mixed/mastered credits per track
+  requireCredits: boolean;            // Require producer + lyrics credits per track
   requireTikTokTimestamp: boolean;    // Require TikTok preview timestamps
   maxCollaborators: number;           // Max collaborators allowed (0 = unlimited)
   maxFeatures: number;                // Max featured artists (0 = unlimited)
@@ -166,6 +178,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   allowCoverArtImageUrl: true,
   showArtworkPreview: true,
   requireMixMaster: false,
+  requireCredits: false,
   requireTikTokTimestamp: false,
   maxCollaborators: 0,
   maxFeatures: 0,

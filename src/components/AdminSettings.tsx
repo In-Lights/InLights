@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import {
   Save, Settings, FileText, Bell, Lock, Table, Send,
   CheckCircle2, XCircle, Loader2, Palette, ExternalLink,
-  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen
+  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
 import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook } from '../store';
 import { applyAccentColor } from '../utils/accentColor';
+import TeamManagement from './TeamManagement';
+import ActivityLog from './ActivityLog';
 
 interface Props { onSaved: () => void; }
 
@@ -149,7 +151,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'drive' | 'discord' | 'sheets'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'drive' | 'discord' | 'sheets' | 'team' | 'log'>('branding');
 
   const [testingDiscord, setTestingDiscord] = useState(false);
   const [discordResult, setDiscordResult] = useState<'success' | 'fail' | null>(null);
@@ -230,6 +232,8 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
     { id: 'discord' as const, label: 'Discord', icon: Bell },
     { id: 'drive' as const, label: 'Drive', icon: FolderOpen },
     { id: 'sheets' as const, label: 'Sheets', icon: Table },
+    { id: 'team' as const, label: 'Team', icon: Users2 },
+    { id: 'log' as const, label: 'Activity', icon: Activity },
   ];
 
   if (loading) return (
@@ -737,6 +741,12 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               onChange={v => set('requireMixMaster', v)}
             />
             <ToggleRow
+              label="Require Producer & Songwriter Credits"
+              desc="Artists must fill in 'Produced by' and 'Lyrics by' for every track before submitting"
+              value={settings.requireCredits ?? false}
+              onChange={v => set('requireCredits', v)}
+            />
+            <ToggleRow
               label="Require Preview Timestamps"
               desc="Artists must enter TikTok/preview start and end times per track"
               value={settings.requireTikTokTimestamp ?? false}
@@ -929,6 +939,18 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               </div>
             </div>
           </Collapsible>
+        </div>
+      )}
+
+      {activeTab === 'team' && (
+        <div className="fade-in">
+          <TeamManagement />
+        </div>
+      )}
+
+      {activeTab === 'log' && (
+        <div className="fade-in">
+          <ActivityLog />
         </div>
       )}
 
