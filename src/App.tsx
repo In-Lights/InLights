@@ -18,6 +18,18 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isStatus, setIsStatus] = useState(false);
   const [loggedIn, setLoggedIn] = useState(isAdminLoggedIn());
+
+  // Re-check session every minute so expired sessions auto-logout
+  useEffect(() => {
+    if (!loggedIn) return;
+    const interval = setInterval(() => {
+      if (!isAdminLoggedIn()) {
+        logoutAdmin();
+        setLoggedIn(false);
+      }
+    }, 60_000);
+    return () => clearInterval(interval);
+  }, [loggedIn]);
   const [adminView, setAdminView] = useState<AdminView>('dashboard');
   const [selectedRelease, setSelectedRelease] = useState<ReleaseSubmission | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);

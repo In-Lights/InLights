@@ -44,7 +44,7 @@ export default function TeamManagement() {
 
   const session = getAdminSession();
   const currentRole = session.role;
-  const canManage = currentRole === 'owner';
+  const canManage = currentRole === 'owner' || currentRole === 'admin' || !currentRole; // legacy logins have no role
 
   useEffect(() => {
     load();

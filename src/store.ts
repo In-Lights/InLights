@@ -32,7 +32,8 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // ============================================================
-// Generate Release ID: IL-2025-06-001
+// Generate Release ID: 2025-06-001
+// Uses MAX id for the month to avoid race conditions from COUNT
 // ============================================================
 async function generateReleaseId(): Promise<string> {
   const now = new Date();
@@ -40,13 +41,22 @@ async function generateReleaseId(): Promise<string> {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const prefix = `${year}-${month}`;
 
+  // Use max instead of count to avoid duplicate IDs if any were deleted
   const { data } = await supabase
     .from('releases')
     .select('id')
-    .ilike('id', `${prefix}-%`);
+    .ilike('id', `${prefix}-%`)
+    .order('id', { ascending: false })
+    .limit(1);
 
-  const count = data ? data.length : 0;
-  return `${prefix}-${String(count + 1).padStart(3, '0')}`;
+  let next = 1;
+  if (data && data.length > 0) {
+    const last = data[0].id as string;
+    const parts = last.split('-');
+    const lastNum = parseInt(parts[parts.length - 1], 10);
+    if (!isNaN(lastNum)) next = lastNum + 1;
+  }
+  return `${prefix}-${String(next).padStart(3, '0')}`;
 }
 
 // ============================================================
@@ -169,7 +179,7 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
 export async function fetchPublicBranding(): Promise<Partial<AdminSettings> | null> {
   const { data, error } = await supabase
     .from('settings')
-    .select('company_name, company_logo, form_welcome_text, form_description, accent_color, submission_success_message, rights_agreement_text, require_drive_folder, require_promo_materials, require_lyrics, min_release_days_notice, max_tracks_album, allowed_release_types, custom_genres, maintenance_mode, maintenance_mode_message, require_cover_art_specs, submission_cooldown_hours, form_accent_button_label, drive_picker_enabled, google_api_client_id, google_api_key, drive_upload_folder_id, allow_cover_art_image_url, show_artwork_preview, require_mix_master, require_tiktok_timestamp, max_collaborators, max_features, form_footer_text, label_email, label_instagram, label_website')
+    .select('company_name, company_logo, form_welcome_text, form_description, accent_color, submission_success_message, rights_agreement_text, require_drive_folder, require_promo_materials, require_lyrics, min_release_days_notice, max_tracks_album, allowed_release_types, custom_genres, maintenance_mode, maintenance_mode_message, require_cover_art_specs, submission_cooldown_hours, form_accent_button_label, drive_picker_enabled, google_api_client_id, google_api_key, drive_upload_folder_id, allow_cover_art_image_url, show_artwork_preview, require_mix_master, require_credits, require_tiktok_timestamp, max_collaborators, max_features, form_footer_text, label_email, label_instagram, label_website')
     .eq('settings_id', 1)
     .single();
 
@@ -491,7 +501,6 @@ export function clearFormDraft(): void {
 }
 
 // ============================================================
-// ============================================================
 // Auth — multi-admin session
 // ============================================================
 
@@ -503,7 +512,26 @@ interface AdminSession {
   role?: AdminRole;
 }
 
-let _adminSession: AdminSession = { loggedIn: false, expiry: 0 };
+const SESSION_KEY = 'inlights_admin_session';
+
+function saveSessionToStorage(session: AdminSession) {
+  try { localStorage.setItem(SESSION_KEY, JSON.stringify(session)); } catch {}
+}
+
+function loadSessionFromStorage(): AdminSession {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return { loggedIn: false, expiry: 0 };
+    const s = JSON.parse(raw) as AdminSession;
+    if (!s.loggedIn || Date.now() >= s.expiry) {
+      localStorage.removeItem(SESSION_KEY);
+      return { loggedIn: false, expiry: 0 };
+    }
+    return s;
+  } catch { return { loggedIn: false, expiry: 0 }; }
+}
+
+let _adminSession: AdminSession = loadSessionFromStorage();
 
 export async function loginAdmin(username: string, password: string): Promise<boolean> {
   const inputHash = await hashPassword(password);
@@ -524,7 +552,7 @@ export async function loginAdmin(username: string, password: string): Promise<bo
       username: users.username,
       role: users.role as AdminRole,
     };
-    // Update last_login
+    saveSessionToStorage(_adminSession);
     await supabase.from('admin_users').update({ last_login: new Date().toISOString() }).eq('id', users.id);
     return true;
   }
@@ -539,6 +567,7 @@ export async function loginAdmin(username: string, password: string): Promise<bo
         username,
         role: 'owner',
       };
+      saveSessionToStorage(_adminSession);
       return true;
     }
   }
@@ -602,6 +631,8 @@ export function setAdminSession(loggedIn: boolean): void {
     loggedIn,
     expiry: loggedIn ? Date.now() + 24 * 60 * 60 * 1000 : 0,
   };
+  if (loggedIn) saveSessionToStorage(_adminSession);
+  else try { localStorage.removeItem(SESSION_KEY); } catch {}
 }
 
 export function isAdminLoggedIn(): boolean {
@@ -610,6 +641,7 @@ export function isAdminLoggedIn(): boolean {
 
 export function logoutAdmin(): void {
   _adminSession = { loggedIn: false, expiry: 0 };
+  try { localStorage.removeItem(SESSION_KEY); } catch {}
 }
 
 // ============================================================

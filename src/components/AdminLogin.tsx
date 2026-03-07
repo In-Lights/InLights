@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Lock, LogIn, Eye, EyeOff, ShieldCheck, ArrowLeft } from 'lucide-react';
-import { loginAdmin, setAdminSession, fetchPublicBranding } from '../store';
+import { loginAdmin, fetchPublicBranding } from '../store';
 import { DEFAULT_ADMIN_SETTINGS } from '../types';
 
 interface Props {
@@ -33,7 +33,7 @@ export default function AdminLogin({ onLogin }: Props) {
     try {
       const ok = await loginAdmin(username, password);
       if (ok) {
-        setAdminSession(true);
+        // loginAdmin already sets the full session including role — don't overwrite it
         onLogin();
       } else {
         setError('Invalid credentials. Please try again.');

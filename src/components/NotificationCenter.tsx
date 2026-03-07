@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Bell, X, Music2, CheckCircle, Clock, Calendar, XCircle } from 'lucide-react';
 import { supabase } from '../store';
 import { ReleaseStatus } from '../types';
-
 interface Notification {
   id: string;
   type: 'new_submission' | 'status_change';
@@ -67,7 +66,9 @@ export default function NotificationCenter({ onNavigateToRelease }: Props) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>(loadNotifications);
   const [ringing, setRinging] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
   const panelRef = useRef<HTMLDivElement>(null);
+  const bellRef = useRef<HTMLButtonElement>(null);
 
   const unread = notifications.filter(n => !n.read).length;
 
@@ -149,8 +150,20 @@ export default function NotificationCenter({ onNavigateToRelease }: Props) {
   const clearAll = () => { setNotifications([]); };
 
   const handleOpen = () => {
+    if (!open && bellRef.current) {
+      const rect = bellRef.current.getBoundingClientRect();
+      const panelWidth = Math.min(320, window.innerWidth - 16);
+      const rightAligned = rect.right - panelWidth;
+      const left = Math.max(8, rightAligned);
+      setPanelStyle({
+        position: 'fixed',
+        top: rect.bottom + 8,
+        left,
+        width: panelWidth,
+        zIndex: 999,
+      });
+    }
     setOpen(o => !o);
-    // Only mark read after a short delay so badge doesn't vanish instantly
     if (!open && unread > 0) {
       setTimeout(markAllRead, 1500);
     }
@@ -167,6 +180,7 @@ export default function NotificationCenter({ onNavigateToRelease }: Props) {
 
       {/* Bell button */}
       <button
+        ref={bellRef}
         onClick={handleOpen}
         className="relative p-2 rounded-xl text-zinc-400 hover:text-white hover:bg-white/5 transition-all"
         title="Notifications"
@@ -182,11 +196,12 @@ export default function NotificationCenter({ onNavigateToRelease }: Props) {
         )}
       </button>
 
-      {/* Dropdown panel — uses fixed positioning to avoid sidebar clipping */}
+      {/* Dropdown panel — positioned dynamically from bell button coords */}
       {open && (
         <div
-          className="fixed top-16 right-4 w-[320px] max-w-[calc(100vw-2rem)] rounded-2xl shadow-2xl z-[200] overflow-hidden border border-white/10 fade-in lg:absolute lg:top-full lg:right-0 lg:mt-2 lg:fixed-none"
-          style={{ background: 'rgba(10,10,12,0.97)', backdropFilter: 'blur(20px)' }}
+          ref={panelRef}
+          className="rounded-2xl shadow-2xl overflow-hidden border border-white/10 fade-in"
+          style={{ ...panelStyle, background: 'rgba(10,10,12,0.97)', backdropFilter: 'blur(20px)' }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3.5 border-b border-white/5">

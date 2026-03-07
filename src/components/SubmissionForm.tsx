@@ -249,7 +249,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
         rightsConfirmed,
       };
       const result = await addSubmission(data);
-      setSubmissionId(result.id);
+      setSubmissionId(result);
       setSubmitted(true);
       clearFormDraft();
       onSubmitted?.();

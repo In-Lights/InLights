@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import {
   Save, Settings, FileText, Bell, Lock, Table, Send,
   CheckCircle2, XCircle, Loader2, Palette, ExternalLink,
-  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity
+  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity, Database
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
 import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook } from '../store';
 import { applyAccentColor } from '../utils/accentColor';
 import TeamManagement from './TeamManagement';
 import ActivityLog from './ActivityLog';
+import DataBackup from './DataBackup';
 
 interface Props { onSaved: () => void; }
 
@@ -151,7 +152,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'drive' | 'discord' | 'sheets' | 'team' | 'log'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'drive' | 'discord' | 'sheets' | 'team' | 'log' | 'backup'>('branding');
 
   const [testingDiscord, setTestingDiscord] = useState(false);
   const [discordResult, setDiscordResult] = useState<'success' | 'fail' | null>(null);
@@ -234,6 +235,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
     { id: 'sheets' as const, label: 'Sheets', icon: Table },
     { id: 'team' as const, label: 'Team', icon: Users2 },
     { id: 'log' as const, label: 'Activity', icon: Activity },
+    { id: 'backup' as const, label: 'Backup', icon: Database },
   ];
 
   if (loading) return (
@@ -954,19 +956,29 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
         </div>
       )}
 
-      {/* Save bar */}
-      {saveError && (
-        <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl">{saveError}</div>
+      {activeTab === 'backup' && (
+        <div className="fade-in">
+          <DataBackup />
+        </div>
       )}
-      <div className="flex items-center gap-4 pt-2 border-t border-white/5">
-        <button onClick={handleSave} disabled={saving}
-          className={`px-6 py-3 rounded-xl flex items-center gap-2 font-medium transition-all disabled:opacity-60 ${saved ? 'bg-emerald-600 text-white' : 'btn-primary'}`}>
-          {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</>
-           : saved ? <><CheckCircle2 className="w-4 h-4" />Saved!</>
-           : <><Save className="w-4 h-4" />Save Settings</>}
-        </button>
-        {saved && <span className="text-zinc-500 text-sm">Changes synced to all devices</span>}
-      </div>
+
+      {/* Save bar — hidden on tabs that have nothing to save */}
+      {!['team', 'log', 'backup'].includes(activeTab) && (
+        <>
+          {saveError && (
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl">{saveError}</div>
+          )}
+          <div className="flex items-center gap-4 pt-2 border-t border-white/5">
+            <button onClick={handleSave} disabled={saving}
+              className={`px-6 py-3 rounded-xl flex items-center gap-2 font-medium transition-all disabled:opacity-60 ${saved ? 'bg-emerald-600 text-white' : 'btn-primary'}`}>
+              {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</>
+               : saved ? <><CheckCircle2 className="w-4 h-4" />Saved!</>
+               : <><Save className="w-4 h-4" />Save Settings</>}
+            </button>
+            {saved && <span className="text-zinc-500 text-sm">Changes synced to all devices</span>}
+          </div>
+        </>
+      )}
     </div>
   );
 }
