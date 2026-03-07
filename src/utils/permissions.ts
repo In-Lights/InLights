@@ -1,49 +1,62 @@
 import { getAdminSession } from '../store';
-import { AdminRole } from '../types';
+import { AdminRole, CustomRole } from '../types';
 
 export function getRole(): AdminRole | undefined {
   return getAdminSession().role;
 }
 
-// What each role can do
 export const ROLE_PERMISSIONS = {
-  // Can view releases and navigate
-  canView:          (r?: AdminRole) => !!r,
-
-  // Can add/edit label notes only
-  canAddNotes:      (r?: AdminRole) => r === 'owner' || r === 'admin' || r === 'reviewer',
-
-  // Can change release status (approve, reject, schedule, etc.)
-  canChangeStatus:  (r?: AdminRole) => r === 'owner' || r === 'admin',
-
-  // Can edit release details (artist, tracks, dates, etc.)
-  canEditRelease:   (r?: AdminRole) => r === 'owner' || r === 'admin',
-
-  // Can delete individual releases
-  canDelete:        (r?: AdminRole) => r === 'owner' || r === 'admin',
-
-  // Can use bulk actions
-  canBulkAction:    (r?: AdminRole) => r === 'owner' || r === 'admin',
-
-  // Can access Settings panel at all
-  canAccessSettings:(r?: AdminRole) => r === 'owner' || r === 'admin',
-
-  // Can change branding, form config, integrations
-  canEditSettings:  (r?: AdminRole) => r === 'owner' || r === 'admin',
-
-  // Can manage team members (add/remove/change roles)
-  canManageTeam:    (r?: AdminRole) => r === 'owner',
-
-  // Can export CSV/PDF
-  canExport:        (r?: AdminRole) => r === 'owner' || r === 'admin',
+  canView:           (r?: AdminRole) => !!r,
+  canAddNotes:       (r?: AdminRole) => r === 'owner' || r === 'admin' || r === 'reviewer',
+  canChangeStatus:   (r?: AdminRole) => r === 'owner' || r === 'admin',
+  canEditRelease:    (r?: AdminRole) => r === 'owner' || r === 'admin',
+  canDelete:         (r?: AdminRole) => r === 'owner' || r === 'admin',
+  canBulkAction:     (r?: AdminRole) => r === 'owner' || r === 'admin',
+  canAccessSettings: (r?: AdminRole) => r === 'owner' || r === 'admin',
+  canEditSettings:   (r?: AdminRole) => r === 'owner' || r === 'admin',
+  canManageTeam:     (r?: AdminRole) => r === 'owner',
+  canExport:         (r?: AdminRole) => r === 'owner' || r === 'admin',
 } as const;
+
+let _customRoles: CustomRole[] = [];
+export function setCustomRoles(roles: CustomRole[]) { _customRoles = roles; }
+export function getCustomRolesCache() { return _customRoles; }
+
+function resolveCustomRole(roleName: string) {
+  return _customRoles.find(r => r.name.toLowerCase() === roleName.toLowerCase())?.permissions ?? null;
+}
 
 export function usePermissions() {
   const role = getRole();
+  const builtIn = ['owner', 'admin', 'reviewer'];
+  const isBuiltIn = !role || builtIn.includes(role);
+
+  if (isBuiltIn) {
+    return {
+      role,
+      isCustomRole: false,
+      can: Object.fromEntries(
+        Object.entries(ROLE_PERMISSIONS).map(([key, fn]) => [key, fn(role)])
+      ) as { [K in keyof typeof ROLE_PERMISSIONS]: boolean },
+    };
+  }
+
+  const custom = resolveCustomRole(role!);
+  const p = custom ?? {};
   return {
     role,
-    can: Object.fromEntries(
-      Object.entries(ROLE_PERMISSIONS).map(([key, fn]) => [key, fn(role)])
-    ) as { [K in keyof typeof ROLE_PERMISSIONS]: boolean },
+    isCustomRole: true,
+    can: {
+      canView:           p.canView ?? false,
+      canAddNotes:       p.canAddNotes ?? false,
+      canChangeStatus:   p.canChangeStatus ?? false,
+      canEditRelease:    p.canEditRelease ?? false,
+      canDelete:         p.canDelete ?? false,
+      canBulkAction:     p.canBulkAction ?? false,
+      canAccessSettings: p.canAccessSettings ?? false,
+      canEditSettings:   p.canAccessSettings ?? false,
+      canManageTeam:     false,
+      canExport:         p.canExport ?? false,
+    },
   };
 }

@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { LayoutDashboard, Settings, LogOut, Music2 } from 'lucide-react';
 import { AdminSettings, DEFAULT_ADMIN_SETTINGS } from './types';
-import { fetchPublicBranding, getAdminSettings, isAdminLoggedIn, logoutAdmin, getAdminSession } from './store';
+import { fetchPublicBranding, getAdminSettings, isAdminLoggedIn, logoutAdmin, getAdminSession, getCustomRoles } from './store';
 import { applyAccentColor } from './utils/accentColor';
-import { usePermissions } from './utils/permissions';
+import { usePermissions, setCustomRoles } from './utils/permissions';
 import SubmissionForm from './components/SubmissionForm';
 import AdminLogin from './components/AdminLogin';
 import Dashboard from './components/Dashboard';
@@ -69,6 +69,7 @@ function App() {
         setAdminSettings(settings);
         applyAccentColor(settings.accentColor);
       });
+      getCustomRoles().then(setCustomRoles);
     }
   }, [loggedIn, refreshKey]);
 
@@ -215,6 +216,7 @@ function App() {
               onViewRelease={handleViewRelease}
               refreshKey={refreshKey}
               onRefresh={() => setRefreshKey(k => k + 1)}
+              pendingReminderDays={adminSettings.pendingReminderDays ?? 2}
             />
           )}
           {adminView === 'detail' && selectedRelease && (

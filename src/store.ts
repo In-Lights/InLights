@@ -101,6 +101,7 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     maintenanceModeMessage: data.maintenance_mode_message ?? DEFAULT_ADMIN_SETTINGS.maintenanceModeMessage,
     requireCoverArtSpecs: data.require_cover_art_specs ?? false,
     autoApproveAfterDays: data.auto_approve_after_days ?? 0,
+    pendingReminderDays: data.pending_reminder_days ?? 2,
     formAccentButtonLabel: data.form_accent_button_label ?? 'Continue',
     drivePickerEnabled: data.drive_picker_enabled ?? false,
     googleApiClientId: data.google_api_client_id ?? '',
@@ -159,6 +160,7 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       maintenance_mode_message: settings.maintenanceModeMessage || null,
       require_cover_art_specs: settings.requireCoverArtSpecs ?? false,
       auto_approve_after_days: settings.autoApproveAfterDays ?? 0,
+      pending_reminder_days: settings.pendingReminderDays ?? 2,
       form_accent_button_label: settings.formAccentButtonLabel || 'Continue',
       drive_picker_enabled: settings.drivePickerEnabled ?? false,
       google_api_client_id: settings.googleApiClientId || null,
@@ -359,12 +361,13 @@ export async function updateSubmissionStatus(
 ): Promise<void> {
   await updateSubmission(id, { status });
   await logActivity(`Status → ${status}`, label || id, id, { status });
-  // Fire status email if artist email is on file
+  // Fire post-status actions non-blocking
   try {
     const { data } = await supabase.from('releases').select('*').eq('id', id).single();
-    if (data?.artist_email) {
+    if (data) {
       const release = rowToRelease(data);
-      await sendStatusNotification(release, data.artist_email as string);
+      if (data.artist_email) await sendStatusNotification(release, data.artist_email as string);
+      syncStatusToSheets(release); // non-blocking sheets update
     }
   } catch { /* non-blocking */ }
 }
@@ -595,6 +598,31 @@ export async function loginAdmin(username: string, password: string): Promise<bo
   return false;
 }
 
+// ============================================================
+// Custom Roles
+// ============================================================
+
+export async function getCustomRoles(): Promise<import('./types').CustomRole[]> {
+  const { data } = await supabase.from('custom_roles').select('*').order('created_at');
+  return (data || []).map(r => ({
+    id: r.id as string,
+    name: r.name as string,
+    permissions: r.permissions as import('./types').CustomRole['permissions'],
+  }));
+}
+
+export async function saveCustomRole(role: Omit<import('./types').CustomRole, 'id'> & { id?: string }): Promise<void> {
+  if (role.id) {
+    await supabase.from('custom_roles').update({ name: role.name, permissions: role.permissions }).eq('id', role.id);
+  } else {
+    await supabase.from('custom_roles').insert({ name: role.name, permissions: role.permissions });
+  }
+}
+
+export async function deleteCustomRole(id: string): Promise<void> {
+  await supabase.from('custom_roles').delete().eq('id', id);
+}
+
 export async function getAdminUsers() {
   const { data, error } = await supabase
     .from('admin_users')
@@ -666,20 +694,14 @@ export function logoutAdmin(): void {
 }
 
 // ============================================================
-// Google Sheets — append-only mirror
+// Google Sheets — full sync mirror
 // ============================================================
 async function sendToGoogleSheets(release: ReleaseSubmission): Promise<void> {
   const settings = await getAdminSettings();
   if (!settings.googleSheetsWebhook) return;
-
   try {
-    const trackNames = release.tracks.map(t => t.title).join(', ');
-    const collabNames = release.collaborations?.map(c => c.name).join(', ') ?? '';
-    const featureNames = release.features?.map(f => f.name).join(', ') ?? '';
-
     await fetch(settings.googleSheetsWebhook, {
-      method: 'POST',
-      mode: 'no-cors',
+      method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action: 'newRelease',
@@ -690,10 +712,10 @@ async function sendToGoogleSheets(release: ReleaseSubmission): Promise<void> {
         genre: release.genre,
         releaseDate: release.releaseDate,
         explicit: release.explicitContent ? 'Yes' : 'No',
-        tracks: trackNames,
+        tracks: release.tracks.map(t => t.title).join(', '),
         trackCount: release.tracks.length,
-        collaborations: collabNames,
-        features: featureNames,
+        collaborations: release.collaborations?.map(c => c.name).join(', ') ?? '',
+        features: release.features?.map(f => f.name).join(', ') ?? '',
         coverArtLink: release.coverArtDriveLink ?? '',
         driveFolderLink: release.driveFolderLink ?? '',
         promoLink: release.promoDriveLink ?? '',
@@ -702,6 +724,36 @@ async function sendToGoogleSheets(release: ReleaseSubmission): Promise<void> {
       }),
     });
   } catch {}
+}
+
+export async function syncStatusToSheets(release: ReleaseSubmission): Promise<void> {
+  const settings = await getAdminSettings();
+  if (!settings.googleSheetsWebhook) return;
+  try {
+    await fetch(settings.googleSheetsWebhook, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'updateStatus',
+        id: release.id,
+        mainArtist: release.mainArtist,
+        releaseTitle: release.releaseTitle,
+        status: release.status,
+        updatedAt: new Date().toISOString(),
+      }),
+    });
+  } catch {}
+}
+
+export async function syncAllToSheets(): Promise<{ sent: number }> {
+  const settings = await getAdminSettings();
+  if (!settings.googleSheetsWebhook) return { sent: 0 };
+  const releases = await getSubmissions();
+  for (const r of releases) {
+    await sendToGoogleSheets(r);
+    await new Promise(res => setTimeout(res, 150)); // rate limit
+  }
+  return { sent: releases.length };
 }
 
 // ============================================================
@@ -929,6 +981,75 @@ export async function testEmailConfig(toEmail: string): Promise<boolean> {
       <p style="color:#71717a;margin:0;">Your ${settings.companyName} email notifications are configured correctly.</p>
     </div></body></html>`;
   return sendEmail(toEmail, `✅ ${settings.companyName} — Email test successful`, html, settings);
+}
+
+// ============================================================
+// Internal Comments (per release)
+// ============================================================
+
+export interface ReleaseComment {
+  id: string;
+  releaseId: string;
+  authorUsername: string;
+  body: string;
+  mentions: string[]; // usernames mentioned with @
+  createdAt: string;
+}
+
+export async function getComments(releaseId: string): Promise<ReleaseComment[]> {
+  const { data, error } = await supabase
+    .from('release_comments')
+    .select('*')
+    .eq('release_id', releaseId)
+    .order('created_at', { ascending: true });
+  if (error) return [];
+  return (data || []).map(r => ({
+    id: r.id as string,
+    releaseId: r.release_id as string,
+    authorUsername: r.author_username as string,
+    body: r.body as string,
+    mentions: (r.mentions as string[]) || [],
+    createdAt: r.created_at as string,
+  }));
+}
+
+export async function addComment(releaseId: string, body: string): Promise<ReleaseComment | null> {
+  const session = getAdminSession();
+  const mentions = [...body.matchAll(/@(\w+)/g)].map(m => m[1]);
+  const { data, error } = await supabase
+    .from('release_comments')
+    .insert({ release_id: releaseId, author_username: session.username || 'Admin', body, mentions })
+    .select()
+    .single();
+  if (error || !data) return null;
+  return {
+    id: data.id as string,
+    releaseId: data.release_id as string,
+    authorUsername: data.author_username as string,
+    body: data.body as string,
+    mentions: (data.mentions as string[]) || [],
+    createdAt: data.created_at as string,
+  };
+}
+
+export async function deleteComment(id: string): Promise<void> {
+  await supabase.from('release_comments').delete().eq('id', id);
+}
+
+// ============================================================
+// Pending Reminders (releases pending > N days)
+// ============================================================
+
+export async function getPendingReminders(days = 2): Promise<ReleaseSubmission[]> {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const { data } = await supabase
+    .from('releases')
+    .select('*')
+    .eq('status', 'pending')
+    .lt('created_at', cutoff.toISOString())
+    .order('created_at', { ascending: true });
+  return (data || []).map(rowToRelease);
 }
 
 // ============================================================

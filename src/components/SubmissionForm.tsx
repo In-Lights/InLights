@@ -228,8 +228,8 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
   const isStep3Valid = tracks.length >= limits.min && tracks.every(t =>
     t.title.trim() && t.wavDriveLink.trim() &&
     (!settings.requireLyrics || t.lyricsDriveLink?.trim() || t.lyricsGoogleDocsLink?.trim()) &&
-    (!settings.requireMixMaster || (t.mixedBy.trim() && t.masteredBy.trim())) &&
-    (!settings.requireCredits || (t.producedBy.trim() && t.lyricsBy.trim()))
+    t.mixedBy.trim() && t.masteredBy.trim() &&
+    t.producedBy.trim() && t.lyricsBy.trim()
   );
   const isStep4Valid =
     rightsConfirmed &&
@@ -722,19 +722,14 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                   {/* Credits */}
                   <div>
                     <label className="block text-xs font-medium text-zinc-400 mb-2">
-                      Credits
-                      {settings.requireCredits && <span className="text-amber-400 text-xs ml-1">(Producer & Songwriter required *)</span>}
-                      {settings.requireMixMaster && <span className="text-amber-400 text-xs ml-1">(Mix & Master required *)</span>}
+                      Credits <span className="text-red-400">*</span>
+                      <span className="text-zinc-600 font-normal ml-1">— all fields required</span>
                     </label>
                     <div className="grid grid-cols-2 gap-2.5">
                       {([['producedBy','Produced by'],['lyricsBy','Lyrics by'],['mixedBy','Mixed by'],['masteredBy','Mastered by']] as const).map(([k, lbl]) => (
                         <input key={k} type="text" value={(track as Record<string, string>)[k]}
                           onChange={e => updateTrack(idx, { [k]: e.target.value } as Partial<Track>)}
-                          placeholder={lbl + (
-                            (settings.requireCredits && (k === 'producedBy' || k === 'lyricsBy')) ||
-                            (settings.requireMixMaster && (k === 'mixedBy' || k === 'masteredBy'))
-                              ? ' *' : ''
-                          )}
+                          placeholder={lbl + ' *'}
                           className="input-dark px-3 py-2.5 rounded-lg text-sm" />
                       ))}
                     </div>

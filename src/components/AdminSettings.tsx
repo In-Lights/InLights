@@ -5,11 +5,13 @@ import {
   Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity, Database, Mail, Eye, EyeOff
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
-import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook, testEmailConfig, getAdminSession } from '../store';
+import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook, testEmailConfig, getAdminSession, syncAllToSheets } from '../store';
 import { applyAccentColor } from '../utils/accentColor';
 import TeamManagement from './TeamManagement';
+import CustomRoleBuilder from './CustomRoleBuilder';
 import ActivityLog from './ActivityLog';
 import DataBackup from './DataBackup';
+import SupabaseStats from './SupabaseStats';
 
 interface Props { onSaved: () => void; }
 
@@ -145,6 +147,27 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
 }
 
 // ── Main component ──────────────────────────────────────────
+
+function SyncAllSheetsButton({ webhookUrl }: { webhookUrl: string }) {
+  const [syncing, setSyncing] = useState(false);
+  const [result, setResult] = useState<{ sent: number } | null>(null);
+  const handle = async () => {
+    if (!confirm('This will re-send all releases to your Google Sheet. Existing rows may duplicate depending on your Apps Script. Continue?')) return;
+    setSyncing(true); setResult(null);
+    const r = await syncAllToSheets();
+    setResult(r);
+    setSyncing(false);
+  };
+  return (
+    <div className="flex items-center gap-2">
+      <button onClick={handle} disabled={syncing || !webhookUrl}
+        className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600/20 border border-blue-500/30 text-blue-400 text-sm font-medium hover:bg-blue-600/30 transition-all disabled:opacity-50">
+        {syncing ? <><Loader2 className="w-4 h-4 animate-spin" />Syncing...</> : <>↑ Sync All Releases</>}
+      </button>
+      {result && <span className="text-xs text-emerald-400">✓ {result.sent} releases synced</span>}
+    </div>
+  );
+}
 
 export default function AdminSettingsPanel({ onSaved }: Props) {
   const [settings, setSettings] = useState<AdminSettingsType>({ ...DEFAULT_ADMIN_SETTINGS });
@@ -787,6 +810,27 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
           </Section>
 
           <Section title="Submission Controls" desc="Fine-tune how and when artists can submit">
+            <Field label="Pending Reminder" hint="Show a dashboard alert when a release has been pending longer than this (0 = never remind)">
+              <div className="flex items-center gap-4 mt-1">
+                <input
+                  type="range" min={0} max={14} step={1}
+                  value={settings.pendingReminderDays ?? 2}
+                  onChange={e => set('pendingReminderDays', Number(e.target.value))}
+                  className="flex-1 h-2"
+                  style={{ accentColor: 'var(--accent)' }}
+                />
+                <div className="w-24 text-center bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg font-mono text-sm font-bold accent-text">
+                  {(settings.pendingReminderDays ?? 2) === 0
+                    ? 'Off'
+                    : `${settings.pendingReminderDays}d`}
+                </div>
+              </div>
+              <p className="text-xs text-zinc-600 mt-1.5">
+                {(settings.pendingReminderDays ?? 2) === 0
+                  ? 'Pending reminders are disabled'
+                  : `You'll be reminded about releases pending for more than ${settings.pendingReminderDays} day${settings.pendingReminderDays !== 1 ? 's' : ''}`}
+              </p>
+            </Field>
             <Field label="Submission Cooldown" hint="Prevent the same artist name from submitting more than once within this window (0 = no limit)">
               <div className="flex items-center gap-4 mt-1">
                 <input
@@ -1043,21 +1087,26 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       {/* ── GOOGLE SHEETS ── */}
       {activeTab === 'sheets' && isOwner && (
         <div className="space-y-5">
-          <Section title="Google Sheets Mirror" desc="Every new submission is appended as a row — Supabase stays the source of truth">
+          <Section title="Google Sheets Sync" desc="New submissions auto-append. Status changes auto-update. Use Sync All to backfill existing releases.">
             <Field label="Apps Script Web App URL">
               <input type="url" value={settings.googleSheetsWebhook} onChange={e => set('googleSheetsWebhook', e.target.value)}
                 placeholder="https://script.google.com/macros/s/.../exec" className="input-dark w-full px-4 py-3 rounded-xl font-mono text-sm" />
             </Field>
 
             {settings.googleSheetsWebhook ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <div className="flex items-center gap-3 flex-wrap">
                   <button onClick={handleTestSheets} disabled={testingSheets}
                     className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-600/30 transition-all disabled:opacity-50">
-                    {testingSheets ? <><Loader2 className="w-4 h-4 animate-spin" />Sending test row...</> : <><Send className="w-4 h-4" />Send Test Row</>}
+                    {testingSheets ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</> : <><Send className="w-4 h-4" />Send Test Row</>}
                   </button>
+                  <SyncAllSheetsButton webhookUrl={settings.googleSheetsWebhook} />
                   {sheetsResult === 'success' && <span className="flex items-center gap-1.5 text-emerald-400 text-sm"><CheckCircle2 className="w-4 h-4" />Sent! Check your Sheet</span>}
                   {sheetsResult === 'fail' && <span className="flex items-center gap-1.5 text-red-400 text-sm"><XCircle className="w-4 h-4" />Failed — check URL & redeploy</span>}
+                </div>
+                <div className="flex items-start gap-3 px-3 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/15 text-xs text-zinc-400">
+                  <span className="text-blue-400">ℹ</span>
+                  <span>Status changes (approve, reject, schedule) automatically push an update row to your Sheet. No manual action needed.</span>
                 </div>
                 <a href={settings.googleSheetsWebhook} target="_blank" rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs text-violet-400 hover:underline">
@@ -1092,8 +1141,13 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       )}
 
       {activeTab === 'team' && (
-        <div className="fade-in">
+        <div className="space-y-6 fade-in">
           <TeamManagement />
+          {isOwner && (
+            <Section title="Custom Roles" desc="Create roles beyond Owner, Admin and Reviewer with granular permissions">
+              <CustomRoleBuilder />
+            </Section>
+          )}
         </div>
       )}
 
@@ -1104,8 +1158,15 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       )}
 
       {activeTab === 'backup' && (
-        <div className="fade-in">
+        <div className="space-y-5 fade-in">
           <DataBackup />
+
+          {/* Supabase DB stats — owner only */}
+          {isOwner && (
+            <Section title="Database Overview" desc="Live stats from your Supabase project">
+              <SupabaseStats />
+            </Section>
+          )}
         </div>
       )}
 

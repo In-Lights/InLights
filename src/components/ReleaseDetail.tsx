@@ -1,11 +1,12 @@
 import { useState } from 'react';
-import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square, ShieldOff } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square, ShieldOff, MessageSquare } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus, ReleaseType, Track, Collaborator, RELEASE_TYPE_LIMITS, GENRES, ReleasePriority, ChecklistItem } from '../types';
 import { updateSubmission } from '../store';
 import { StatusBadge, ReleaseTypeBadge } from './ui/Badge';
 import Lightbox from './Lightbox';
 import AudioPlayer from './AudioPlayer';
 import { usePermissions } from '../utils/permissions';
+import InternalComments from './InternalComments';
 
 interface Props {
   release: ReleaseSubmission;
@@ -177,7 +178,9 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
   const limits = RELEASE_TYPE_LIMITS[releaseType];
 
   return (
-    <div className="space-y-6 fade-in">
+    <div className="flex gap-6 items-start">
+      {/* Main content */}
+      <div className="flex-1 min-w-0 space-y-6 fade-in">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <button onClick={onBack} className="flex items-center gap-2 text-zinc-400 hover:text-white transition-all">
@@ -721,6 +724,13 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
           </div>
         </div>
       </div>
+      </div>{/* end main content */}
+
+      {/* Comments panel — sticky sidebar */}
+      <div className="w-80 flex-shrink-0 sticky top-6 hidden xl:flex flex-col rounded-2xl border border-white/8 bg-black/30 backdrop-blur-xl overflow-hidden" style={{ height: 'calc(100vh - 120px)' }}>
+        <InternalComments releaseId={initialRelease.id} />
+      </div>
+
     </div>
   );
 }

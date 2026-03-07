@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown, ShieldOff } from 'lucide-react';
+import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown, ShieldOff, Bell } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus } from '../types';
-import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV } from '../store';
+import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV, getPendingReminders } from '../store';
 import { ReleaseTypeBadge } from './ui/Badge';
 import ExportPDFButton from './ExportPDF';
 import { usePermissions } from '../utils/permissions';
@@ -10,6 +10,7 @@ interface Props {
   onViewRelease: (release: ReleaseSubmission) => void;
   refreshKey: number;
   onRefresh: () => void;
+  pendingReminderDays?: number;
 }
 
 
@@ -45,7 +46,7 @@ function formatTitle(release: ReleaseSubmission): string {
   return `${release.releaseTitle}${featSuffix}`;
 }
 
-export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Props) {
+export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendingReminderDays = 2 }: Props) {
   const { role, can } = usePermissions();
   const [statusFilter, setStatusFilter] = useState<ReleaseStatus | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -55,6 +56,8 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [pendingReminders, setPendingReminders] = useState<ReleaseSubmission[]>([]);
+  const [dismissedReminders, setDismissedReminders] = useState(false);
 
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev);
@@ -96,6 +99,7 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
     getSubmissions()
       .then(setSubmissions)
       .finally(() => setLoading(false));
+    if (pendingReminderDays > 0) getPendingReminders(pendingReminderDays).then(setPendingReminders);
   }, [refreshKey]);
 
   const stats = useMemo(() => {
@@ -165,6 +169,28 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
 
   return (
     <div className="space-y-6 fade-in">
+
+      {/* Pending reminders banner */}
+      {!dismissedReminders && pendingReminders.length > 0 && (
+        <div className="flex items-start gap-3 px-4 py-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25">
+          <Bell className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-300">
+              {pendingReminders.length} release{pendingReminders.length !== 1 ? 's' : ''} pending for {pendingReminderDays}+ days
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {pendingReminders.map(r => `${r.mainArtist} — ${r.releaseTitle}`).join(' · ')}
+            </p>
+          </div>
+          <button
+            onClick={() => setDismissedReminders(true)}
+            className="text-zinc-600 hover:text-zinc-400 flex-shrink-0"
+          >
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {statCards.map(s => (

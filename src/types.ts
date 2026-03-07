@@ -14,7 +14,23 @@ export interface PlatformLinks {
   anghami?: string;
 }
 
-export type AdminRole = 'owner' | 'admin' | 'reviewer';
+export type AdminRole = 'owner' | 'admin' | 'reviewer' | string; // string allows custom roles
+
+export interface CustomRole {
+  id: string;
+  name: string;
+  permissions: {
+    canView: boolean;
+    canAddNotes: boolean;
+    canChangeStatus: boolean;
+    canEditRelease: boolean;
+    canDelete: boolean;
+    canBulkAction: boolean;
+    canAccessSettings: boolean;
+    canExport: boolean;
+    canManageTeam: boolean;
+  };
+}
 
 export interface AdminUser {
   id: string;
@@ -124,6 +140,7 @@ export interface AdminSettings {
   maintenanceModeMessage: string;     // Message shown when form is in maintenance
   requireCoverArtSpecs: boolean;      // Show cover art specs checklist before upload
   autoApproveAfterDays: number;       // 0 = never auto-approve
+  pendingReminderDays: number;        // 0 = never remind
   formAccentButtonLabel: string;      // Custom label for next/continue buttons
 
   // Google Drive Picker
@@ -183,6 +200,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   maintenanceModeMessage: 'The submission portal is temporarily unavailable. Please check back soon.',
   requireCoverArtSpecs: false,
   autoApproveAfterDays: 0,
+  pendingReminderDays: 2,
   formAccentButtonLabel: 'Continue',
   drivePickerEnabled: false,
   googleApiClientId: '',
