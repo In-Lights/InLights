@@ -1,625 +1,682 @@
-import { useState, useRef, type ChangeEvent } from 'react';
-import {
-  User, Image, Disc, ListMusic, FileText, ShieldCheck,
-  ChevronRight, ChevronLeft, Plus, X, Check, Upload,
-  Music, AlertCircle, ExternalLink, Sparkles, Headphones, RotateCcw,
-} from 'lucide-react';
-import {
-  type FormState, type Collaborator, type TrackData,
-  type ReleaseType, type Release,
-  initialFormState, createTrack, createCollaborator,
-  getTrackLimits, isValidUrl, generateId, saveRelease,
-} from '@/lib/types';
+import { useState } from 'react';
+import { Music, User, Disc3, Upload, ChevronRight, ChevronLeft, Plus, Trash2, CheckCircle2, ExternalLink } from 'lucide-react';
+import { Track, Collaborator, ReleaseType, RELEASE_TYPE_LIMITS, GENRES, ReleaseSubmission, AdminSettings } from '../types';
+import { addSubmission } from '../store';
 
-const STEPS = [
-  { n: 1, title: 'Artist Info', icon: User },
-  { n: 2, title: 'Cover Art', icon: Image },
-  { n: 3, title: 'Release Type', icon: Disc },
-  { n: 4, title: 'Tracklist', icon: ListMusic },
-  { n: 5, title: 'Credits & Files', icon: FileText },
-  { n: 6, title: 'Agreement', icon: ShieldCheck },
-];
+const emptyTrack = (): Track => ({
+  title: '',
+  previewStart: '0:00',
+  previewEnd: '0:30',
+  explicit: false,
+  wavDriveLink: '',
+  lyricsDriveLink: '',
+  lyricsGoogleDocsLink: '',
+  producedBy: '',
+  lyricsBy: '',
+  mixedBy: '',
+  masteredBy: '',
+});
 
-const syne = { fontFamily: "'Syne', sans-serif" };
+const emptyCollab = (): Collaborator => ({
+  name: '',
+  role: 'artist',
+  platformLinks: { spotify: '', appleMusic: '', anghami: '' },
+});
 
-export default function SubmissionForm() {
-  const [step, setStep] = useState(1);
-  const [form, setForm] = useState<FormState>({ ...initialFormState });
-  const [errors, setErrors] = useState<Record<string, string>>({});
+interface Props {
+  settings: AdminSettings;
+  onSubmitted?: () => void;
+}
+
+export default function SubmissionForm({ settings, onSubmitted }: Props) {
+  const [step, setStep] = useState(0);
   const [submitted, setSubmitted] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const coverRef = useRef<HTMLInputElement>(null);
+  const [submissionId, setSubmissionId] = useState('');
 
-  const set = <K extends keyof FormState>(key: K, val: FormState[K]) => {
-    setForm(p => ({ ...p, [key]: val }));
-    setErrors(p => { const n = { ...p }; delete n[key as string]; return n; });
-  };
+  // Step 1: Artist Info
+  const [mainArtist, setMainArtist] = useState('');
+  const [collaborations, setCollaborations] = useState<Collaborator[]>([]);
+  const [features, setFeatures] = useState<Collaborator[]>([]);
 
-  const setReleaseType = (type: ReleaseType) => {
-    const lim = getTrackLimits(type);
-    let tracks = [...form.tracks];
-    if (type === 'single') tracks = [tracks[0] || createTrack()];
-    else if (type === 'ep') {
-      while (tracks.length < lim.min) tracks.push(createTrack());
-      if (tracks.length > lim.max) tracks = tracks.slice(0, lim.max);
-    } else {
-      if (tracks.length === 0) tracks = [createTrack()];
-    }
-    setForm(p => ({ ...p, releaseType: type, tracks }));
-    setErrors(p => { const n = { ...p }; delete n.releaseType; return n; });
+  // Step 2: Release Info + Cover Art
+  const [releaseType, setReleaseType] = useState<ReleaseType>('single');
+  const [releaseTitle, setReleaseTitle] = useState('');
+  const [releaseDate, setReleaseDate] = useState('');
+  const [explicitContent, setExplicitContent] = useState(false);
+  const [genre, setGenre] = useState('');
+  const [coverArtDriveLink, setCoverArtDriveLink] = useState('');
+
+  // Step 3: Tracks
+  const [tracks, setTracks] = useState<Track[]>([emptyTrack()]);
+
+  // Step 4: Files & Links
+  const [promoDriveLink, setPromoDriveLink] = useState('');
+  const [driveFolderLink, setDriveFolderLink] = useState('');
+  const [rightsConfirmed, setRightsConfirmed] = useState(false);
+
+  const limits = RELEASE_TYPE_LIMITS[releaseType];
+
+  const updateTrack = (idx: number, updates: Partial<Track>) => {
+    setTracks(prev => prev.map((t, i) => i === idx ? { ...t, ...updates } : t));
   };
 
   const addTrack = () => {
-    const lim = getTrackLimits(form.releaseType as ReleaseType);
-    if (form.tracks.length < lim.max) setForm(p => ({ ...p, tracks: [...p.tracks, createTrack()] }));
+    if (tracks.length < limits.max) setTracks(prev => [...prev, emptyTrack()]);
   };
 
-  const removeTrack = (id: string) => {
-    const lim = getTrackLimits(form.releaseType as ReleaseType);
-    if (form.tracks.length > lim.min) setForm(p => ({ ...p, tracks: p.tracks.filter(t => t.id !== id) }));
+  const removeTrack = (idx: number) => {
+    if (tracks.length > limits.min) setTracks(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const updateTrack = (id: string, field: keyof TrackData, value: unknown) => {
-    setForm(p => ({ ...p, tracks: p.tracks.map(t => t.id === id ? { ...t, [field]: value } : t) }));
+  const handleTypeChange = (type: ReleaseType) => {
+    setReleaseType(type);
+    const lim = RELEASE_TYPE_LIMITS[type];
+    if (tracks.length < lim.min) {
+      setTracks(prev => [...prev, ...Array(lim.min - prev.length).fill(null).map(() => emptyTrack())]);
+    } else if (tracks.length > lim.max) {
+      setTracks(prev => prev.slice(0, lim.max));
+    }
   };
 
-  const addCollab = (type: 'collaborations' | 'features') =>
-    setForm(p => ({ ...p, [type]: [...p[type], createCollaborator()] }));
+  // Validations per step
+  const isStep1Valid = mainArtist.trim().length > 0;
+  const isStep2Valid = releaseTitle.trim().length > 0 && releaseDate.length > 0 && genre.length > 0 && coverArtDriveLink.trim().length > 0;
+  const isStep3Valid = tracks.length >= limits.min && tracks.every(t => t.title.trim() && t.wavDriveLink.trim());
+  const isStep4Valid = rightsConfirmed;
 
-  const removeCollab = (type: 'collaborations' | 'features', id: string) =>
-    setForm(p => ({ ...p, [type]: p[type].filter((c: Collaborator) => c.id !== id) }));
-
-  const updateCollab = (type: 'collaborations' | 'features', id: string, field: keyof Collaborator, val: string) =>
-    setForm(p => ({ ...p, [type]: p[type].map((c: Collaborator) => c.id === id ? { ...c, [field]: val } : c) }));
-
-  const handleCoverUpload = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setForm(p => ({ ...p, coverArtFileName: file.name }));
-    const reader = new FileReader();
-    reader.onload = (ev) => setForm(p => ({ ...p, coverArtPreview: ev.target?.result as string }));
-    reader.readAsDataURL(file);
-    setErrors(p => { const n = { ...p }; delete n.coverArt; return n; });
-  };
-
-  const handleWavUpload = (trackId: string, e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) updateTrack(trackId, 'wavFileName', file.name);
-  };
-
-  const validate = (s: number): boolean => {
-    const errs: Record<string, string> = {};
-    if (s === 1) {
-      if (!form.artistName.trim()) errs.artistName = 'Artist name is required';
-      form.collaborations.forEach((c, i) => {
-        if (!c.name.trim()) errs[`col_${i}_name`] = 'Name required';
-        if (c.spotifyUrl && !isValidUrl(c.spotifyUrl)) errs[`col_${i}_sp`] = 'Invalid URL';
-        if (c.appleMusicUrl && !isValidUrl(c.appleMusicUrl)) errs[`col_${i}_am`] = 'Invalid URL';
-        if (c.anghamiUrl && !isValidUrl(c.anghamiUrl)) errs[`col_${i}_an`] = 'Invalid URL';
-      });
-      form.features.forEach((f, i) => {
-        if (!f.name.trim()) errs[`ft_${i}_name`] = 'Name required';
-        if (f.spotifyUrl && !isValidUrl(f.spotifyUrl)) errs[`ft_${i}_sp`] = 'Invalid URL';
-        if (f.appleMusicUrl && !isValidUrl(f.appleMusicUrl)) errs[`ft_${i}_am`] = 'Invalid URL';
-        if (f.anghamiUrl && !isValidUrl(f.anghamiUrl)) errs[`ft_${i}_an`] = 'Invalid URL';
-      });
-    }
-    if (s === 2) {
-      if (!form.coverArtFileName && !form.fullDriveFolderLink.trim()) errs.coverArt = 'Upload cover art or provide a Drive folder link';
-      if (form.fullDriveFolderLink && !isValidUrl(form.fullDriveFolderLink)) errs.fullDriveFolderLink = 'Must be a valid URL';
-    }
-    if (s === 3) {
-      if (!form.releaseType) errs.releaseType = 'Select a release type';
-      if (!form.releaseTitle.trim()) errs.releaseTitle = 'Release title is required';
-      if (!form.releaseDate) errs.releaseDate = 'Release date is required';
-    }
-    if (s === 4) {
-      form.tracks.forEach((t, i) => { if (!t.title.trim()) errs[`tr_${i}_title`] = 'Track title required'; });
-    }
-    if (s === 5) {
-      form.tracks.forEach((t, i) => {
-        if (t.lyricsDocLink && !isValidUrl(t.lyricsDocLink)) errs[`tr_${i}_lyrics`] = 'Invalid URL';
-      });
-      if (form.promoFolderLink && !isValidUrl(form.promoFolderLink)) errs.promoFolderLink = 'Invalid URL';
-    }
-    if (s === 6) {
-      if (!form.agreement) errs.agreement = 'You must agree before submitting';
-    }
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
-
-  const next = () => { if (validate(step)) setStep(s => Math.min(s + 1, 6)); };
-  const prev = () => setStep(s => Math.max(s - 1, 1));
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const handleSubmit = async () => {
-    if (!validate(6)) return;
     setSubmitting(true);
-    await new Promise(r => setTimeout(r, 1500));
-    const release: Release = {
-      id: generateId(), artistName: form.artistName,
-      collaborations: form.collaborations, features: form.features,
-      coverArtFileName: form.coverArtFileName,
-      releaseType: form.releaseType as ReleaseType,
-      releaseTitle: form.releaseTitle, releaseDate: form.releaseDate,
-      tracks: form.tracks, promoFolderLink: form.promoFolderLink,
-      fullDriveFolderLink: form.fullDriveFolderLink, agreement: true,
-      status: 'pending', createdAt: new Date().toISOString(),
-      driveFolderLink: form.fullDriveFolderLink || '',
-    };
-    saveRelease(release);
-    setSubmitting(false);
-    setSubmitted(true);
+    setSubmitError('');
+    try {
+      const data: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
+        mainArtist,
+        collaborations: collaborations.filter(c => c.name.trim()),
+        features: features.filter(f => f.name.trim()),
+        releaseType,
+        releaseTitle,
+        releaseDate,
+        explicitContent,
+        genre,
+        coverArtDriveLink,
+        tracks,
+        promoDriveLink: promoDriveLink || undefined,
+        driveFolderLink: driveFolderLink || undefined,
+        rightsConfirmed,
+      };
+      const result = await addSubmission(data);
+      setSubmissionId(result.id);
+      setSubmitted(true);
+      onSubmitted?.();
+    } catch (err) {
+      setSubmitError('Failed to submit. Please check your connection and try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  // ─── SUCCESS ────────────────────────
   if (submitted) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 animate-scale-in">
-        <div className="w-16 h-16 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center mb-6">
-          <Check className="w-8 h-8 text-emerald-400" />
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="glass-card rounded-2xl p-8 md:p-12 max-w-lg w-full text-center fade-in">
+          <div className="w-20 h-20 rounded-full bg-emerald-500/20 flex items-center justify-center mx-auto mb-6">
+            <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Release Submitted!</h2>
+          <p className="text-zinc-400 mb-6">Your submission has been received and is under review.</p>
+          <div className="bg-zinc-800/50 rounded-xl p-4 mb-6">
+            <p className="text-sm text-zinc-500 mb-1">Submission ID</p>
+            <p className="text-lg font-mono font-bold text-violet-400">{submissionId}</p>
+          </div>
+          <button
+            onClick={() => { setSubmitted(false); setStep(0); setMainArtist(''); setCollaborations([]); setFeatures([]); setReleaseType('single'); setReleaseTitle(''); setReleaseDate(''); setExplicitContent(false); setGenre(''); setCoverArtDriveLink(''); setTracks([emptyTrack()]); setPromoDriveLink(''); setDriveFolderLink(''); setRightsConfirmed(false); }}
+            className="btn-primary px-6 py-3 rounded-xl"
+          >
+            Submit Another Release
+          </button>
         </div>
-        <h2 className="text-2xl font-bold text-white mb-2" style={syne}>Release Submitted!</h2>
-        <p className="text-[var(--text-muted)] mb-1">
-          <span className="text-[var(--purple-light)] font-semibold">"{form.releaseTitle}"</span> has been submitted for review.
-        </p>
-        <p className="text-sm text-[var(--text-muted)] mb-8">We'll be in touch soon.</p>
-        <button onClick={() => { setForm({ ...initialFormState }); setStep(1); setSubmitted(false); }} className="btn-secondary">
-          <RotateCcw className="w-4 h-4" /> Submit Another
-        </button>
       </div>
     );
   }
 
-  // ─── SUBMITTING ─────────────────────
-  if (submitting) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 animate-fade-in">
-        <div className="w-10 h-10 border-3 border-[var(--border)] border-t-[var(--purple)] rounded-full mb-6" style={{ animation: 'spin 0.8s linear infinite' }} />
-        <p className="text-base text-white font-semibold" style={syne}>Processing your release...</p>
-        <p className="text-sm text-[var(--text-muted)] mt-1">Please wait</p>
-      </div>
-    );
-  }
-
-  const Err = ({ k }: { k: string }) => errors[k]
-    ? <p className="text-red-400 text-xs mt-1.5 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{errors[k]}</p>
-    : null;
-
-  // ─── STEP BAR ───────────────────────
-  const StepBar = () => (
-    <div className="mb-8">
-      {/* Desktop */}
-      <div className="hidden sm:flex items-center justify-between">
-        {STEPS.map((s, i) => (
-          <div key={s.n} className="flex items-center flex-1 last:flex-none">
-            <button
-              onClick={() => { if (s.n < step) setStep(s.n); }}
-              className={`flex flex-col items-center ${s.n < step ? 'cursor-pointer' : 'cursor-default'}`}
-            >
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-1.5 transition-all ${
-                step > s.n
-                  ? 'bg-[var(--purple)] text-white'
-                  : step === s.n
-                    ? 'bg-[var(--purple)]/15 border border-[var(--purple)]/40 text-[var(--purple-light)]'
-                    : 'bg-[var(--card)] border border-[var(--border)] text-[var(--text-muted)]'
-              }`}>
-                {step > s.n ? <Check className="w-4 h-4" strokeWidth={3} /> : <s.icon className="w-4 h-4" />}
-              </div>
-              <span className={`text-xs font-medium ${step >= s.n ? 'text-[var(--text-secondary)]' : 'text-[var(--text-muted)]'}`}>
-                {s.title}
-              </span>
-            </button>
-            {i < STEPS.length - 1 && (
-              <div className="flex-1 mx-3 step-line rounded-full">
-                <div className="step-line-fill" style={{ transform: `scaleX(${step > s.n ? 1 : 0})` }} />
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-      {/* Mobile */}
-      <div className="sm:hidden">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-semibold text-white">Step {step} <span className="text-[var(--text-muted)]">of 6</span></span>
-          <span className="text-sm text-[var(--text-muted)]">{STEPS[step - 1].title}</span>
-        </div>
-        <div className="h-1.5 rounded-full bg-[var(--card)] overflow-hidden">
-          <div className="h-full rounded-full bg-[var(--purple)] transition-all duration-500" style={{ width: `${(step / 6) * 100}%` }} />
-        </div>
-      </div>
-    </div>
-  );
-
-  const CollabSection = ({ type, label }: { type: 'collaborations' | 'features'; label: string }) => (
-    <div className="mt-6">
-      <div className="flex items-center justify-between mb-3">
-        <div>
-          <h3 className="text-sm font-semibold text-white">{label}</h3>
-          <p className="text-xs text-[var(--text-muted)]">Optional</p>
-        </div>
-        <button type="button" onClick={() => addCollab(type)} className="btn-ghost text-xs">
-          <Plus className="w-3.5 h-3.5" /> Add
-        </button>
-      </div>
-      {form[type].map((c: Collaborator, i: number) => (
-        <div key={c.id} className="card p-4 mb-3 animate-fade-in">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide">
-              {label.slice(0, -1)} #{i + 1}
-            </span>
-            <button type="button" onClick={() => removeCollab(type, c.id)} className="text-[var(--text-muted)] hover:text-red-400 transition p-1">
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-          <div className="space-y-3">
-            <div>
-              <input value={c.name} onChange={e => updateCollab(type, c.id, 'name', e.target.value)} className="input" placeholder="Artist name" />
-              <Err k={`${type === 'collaborations' ? 'col' : 'ft'}_${i}_name`} />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { key: 'spotifyUrl' as const, label: 'Spotify', ph: 'https://open.spotify.com/...', ek: 'sp' },
-                { key: 'appleMusicUrl' as const, label: 'Apple Music', ph: 'https://music.apple.com/...', ek: 'am' },
-                { key: 'anghamiUrl' as const, label: 'Anghami', ph: 'https://play.anghami.com/...', ek: 'an' },
-              ].map(p => (
-                <div key={p.key}>
-                  <label className="text-xs text-[var(--text-muted)] mb-1 block">{p.label}</label>
-                  <input type="url" value={c[p.key]} onChange={e => updateCollab(type, c.id, p.key, e.target.value)} className="input" placeholder={p.ph} />
-                  <Err k={`${type === 'collaborations' ? 'col' : 'ft'}_${i}_${p.ek}`} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
+  const steps = [
+    { icon: User, label: 'Artist Info' },
+    { icon: Disc3, label: 'Release Info' },
+    { icon: Music, label: 'Tracklist' },
+    { icon: Upload, label: 'Links & Submit' },
+  ];
 
   return (
-    <div className="animate-fade-in-slow max-w-3xl mx-auto">
-      <StepBar />
-
-      <div className="card-elevated p-6 sm:p-8 min-h-[380px]">
-        {/* STEP 1 */}
-        {step === 1 && (
-          <div className="animate-fade-in" key="s1">
-            <StepHead icon={User} title="Artist Information" desc="Who's behind this release?" />
-            <div>
-              <label className="label label-required">Main Artist</label>
-              <input value={form.artistName} onChange={e => set('artistName', e.target.value)} className="input" placeholder="Enter artist or band name" />
-              <Err k="artistName" />
-            </div>
-            <CollabSection type="collaborations" label="Collaborations" />
-            <CollabSection type="features" label="Features" />
+    <div className="min-h-screen">
+      {/* Header */}
+      <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-3">
+          <img src={settings.companyLogo} alt={settings.companyName} className="h-10 w-10 object-contain rounded-lg" />
+          <div>
+            <h1 className="font-bold text-lg">{settings.companyName}</h1>
+            <p className="text-xs text-zinc-500">{settings.formWelcomeText}</p>
           </div>
-        )}
+        </div>
+      </header>
 
-        {/* STEP 2 */}
-        {step === 2 && (
-          <div className="animate-fade-in" key="s2">
-            <StepHead icon={Image} title="Cover Art" desc="Upload your release artwork" />
-            <div
-              onClick={() => coverRef.current?.click()}
-              className={`rounded-xl p-8 text-center cursor-pointer transition-all border-2 border-dashed ${
-                form.coverArtPreview ? 'border-[var(--purple)]/30 bg-[var(--purple)]/5' : 'border-[var(--border)] hover:border-[var(--border-light)]'
-              }`}
-            >
-              {form.coverArtPreview ? (
-                <div className="flex flex-col items-center">
-                  <img src={form.coverArtPreview} alt="Cover" className="w-48 h-48 object-cover rounded-xl mb-4 shadow-lg" />
-                  <p className="text-sm text-white font-medium">{form.coverArtFileName}</p>
-                  <p className="text-xs text-[var(--text-muted)] mt-1">Click to replace</p>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center py-8">
-                  <Upload className="w-10 h-10 text-[var(--text-muted)] mb-4" />
-                  <p className="text-sm text-white font-medium mb-1">Click to upload cover art</p>
-                  <p className="text-xs text-[var(--text-muted)]">JPG — 3000 × 3000 pixels recommended</p>
-                </div>
-              )}
-              <input ref={coverRef} type="file" accept="image/jpeg,image/jpg,image/png" onChange={handleCoverUpload} className="hidden" />
-            </div>
-            <Err k="coverArt" />
-
-            <div className="flex items-center gap-4 my-6">
-              <div className="flex-1 h-px bg-[var(--border)]" />
-              <span className="text-xs text-[var(--text-muted)] font-medium">OR</span>
-              <div className="flex-1 h-px bg-[var(--border)]" />
-            </div>
-
-            <div>
-              <label className="label">Full Google Drive Folder</label>
-              <p className="text-xs text-[var(--text-muted)] mb-2">Provide a Drive folder to skip individual uploads</p>
-              <input type="url" value={form.fullDriveFolderLink} onChange={e => set('fullDriveFolderLink', e.target.value)} className="input" placeholder="https://drive.google.com/drive/folders/..." />
-              <Err k="fullDriveFolderLink" />
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3 */}
-        {step === 3 && (
-          <div className="animate-fade-in" key="s3">
-            <StepHead icon={Disc} title="Release Type" desc="Choose format and provide details" />
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-              {([
-                { type: 'single' as ReleaseType, label: 'Single', desc: '1 track', icon: Music },
-                { type: 'ep' as ReleaseType, label: 'EP', desc: '3–6 tracks', icon: Disc },
-                { type: 'album' as ReleaseType, label: 'Album', desc: 'Up to 32', icon: Headphones },
-              ]).map(r => (
-                <button key={r.type} type="button" onClick={() => setReleaseType(r.type)}
-                  className={`release-type-card card p-5 text-left relative ${form.releaseType === r.type ? 'selected' : ''}`}>
-                  {form.releaseType === r.type && (
-                    <div className="absolute top-3 right-3 w-5 h-5 rounded-full bg-[var(--purple)] flex items-center justify-center">
-                      <Check className="w-3 h-3 text-white" strokeWidth={3} />
-                    </div>
-                  )}
-                  <r.icon className={`w-8 h-8 mb-3 ${form.releaseType === r.type ? 'text-[var(--purple-light)]' : 'text-[var(--text-muted)]'}`} strokeWidth={1.5} />
-                  <h3 className="text-base font-bold text-white mb-0.5" style={syne}>{r.label}</h3>
-                  <p className="text-xs text-[var(--text-muted)]">{r.desc}</p>
-                </button>
-              ))}
-            </div>
-            <Err k="releaseType" />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
-              <div>
-                <label className="label label-required">Release Title</label>
-                <input value={form.releaseTitle} onChange={e => set('releaseTitle', e.target.value)} className="input" placeholder="e.g., Midnight Dreams" />
-                <Err k="releaseTitle" />
-              </div>
-              <div>
-                <label className="label label-required">Release Date</label>
-                <input type="date" value={form.releaseDate} onChange={e => set('releaseDate', e.target.value)} className="input" />
-                <Err k="releaseDate" />
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 4 */}
-        {step === 4 && (
-          <div className="animate-fade-in" key="s4">
-            <StepHead icon={ListMusic} title="Tracklist" desc={
-              form.releaseType === 'single' ? '1 track' :
-              form.releaseType === 'ep' ? `${form.tracks.length} of 3–6 tracks` :
-              `${form.tracks.length} of up to 32 tracks`
-            } />
-            <div className="space-y-4">
-              {form.tracks.map((track, i) => (
-                <div key={track.id} className="card p-5 animate-fade-in">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-[var(--purple)]/10 border border-[var(--purple)]/20 flex items-center justify-center">
-                        <span className="text-xs font-bold text-[var(--purple-light)]">{String(i + 1).padStart(2, '0')}</span>
-                      </div>
-                      <span className="text-sm font-semibold text-white">Track {i + 1}</span>
-                    </div>
-                    {form.releaseType !== 'single' && form.tracks.length > getTrackLimits(form.releaseType as ReleaseType).min && (
-                      <button type="button" onClick={() => removeTrack(track.id)} className="text-[var(--text-muted)] hover:text-red-400 transition p-1">
-                        <X className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-                    <div className="sm:col-span-2">
-                      <label className="label label-required">Track Title</label>
-                      <input value={track.title} onChange={e => updateTrack(track.id, 'title', e.target.value)} className="input" placeholder="Track name" />
-                      <Err k={`tr_${i}_title`} />
-                    </div>
-                    <div>
-                      <label className="label">Preview Time</label>
-                      <input value={track.previewTime} onChange={e => updateTrack(track.id, 'previewTime', e.target.value)} className="input" placeholder="e.g., 0:15 – 0:30" />
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 mb-4">
-                    <label className="text-sm text-[var(--text-secondary)]">Explicit Content</label>
-                    <button type="button" onClick={() => updateTrack(track.id, 'explicit', !track.explicit)}
-                      className={`toggle ${track.explicit ? 'toggle-on' : 'toggle-off'}`}>
-                      <div className={`toggle-knob ${track.explicit ? 'toggle-knob-on' : 'toggle-knob-off'}`} />
-                    </button>
-                    <span className={`text-sm font-medium ${track.explicit ? 'text-[var(--purple-light)]' : 'text-[var(--text-muted)]'}`}>
-                      {track.explicit ? 'Yes' : 'No'}
-                    </span>
-                  </div>
-
-                  <div className="border-t border-[var(--border)] pt-4">
-                    <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-3">Credits</p>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      {[
-                        { key: 'producedBy' as const, label: 'Produced by', ph: 'Producer name' },
-                        { key: 'lyricsBy' as const, label: 'Lyrics by', ph: 'Lyricist name' },
-                        { key: 'mixedBy' as const, label: 'Mixed by', ph: 'Mix engineer' },
-                        { key: 'masteredBy' as const, label: 'Mastered by', ph: 'Mastering engineer' },
-                      ].map(c => (
-                        <div key={c.key}>
-                          <label className="text-xs text-[var(--text-muted)] mb-1 block">{c.label}</label>
-                          <input value={track[c.key]} onChange={e => updateTrack(track.id, c.key, e.target.value)} className="input" placeholder={c.ph} />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {form.releaseType !== 'single' && form.tracks.length < getTrackLimits(form.releaseType as ReleaseType).max && (
-              <button type="button" onClick={addTrack}
-                className="mt-4 w-full py-3.5 border-2 border-dashed border-[var(--border)] rounded-xl text-sm text-[var(--text-muted)] hover:border-[var(--purple)]/30 hover:text-[var(--purple-light)] transition-all flex items-center justify-center gap-2">
-                <Plus className="w-4 h-4" /> Add Track
+      <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Progress */}
+        <div className="flex items-center justify-between mb-10">
+          {steps.map((s, i) => (
+            <div key={i} className="flex items-center flex-1 last:flex-none">
+              <button
+                onClick={() => { if (i < step) setStep(i); }}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                  i === step ? 'bg-violet-600/20 text-violet-400 glow-border' :
+                  i < step ? 'text-emerald-400 cursor-pointer' : 'text-zinc-600'
+                }`}
+              >
+                <s.icon className="w-4 h-4" />
+                <span className="hidden sm:inline">{s.label}</span>
+                <span className="sm:hidden">{i + 1}</span>
               </button>
-            )}
-          </div>
-        )}
+              {i < steps.length - 1 && (
+                <div className={`flex-1 h-px mx-2 ${i < step ? 'bg-emerald-500/40' : 'bg-zinc-800'}`} />
+              )}
+            </div>
+          ))}
+        </div>
 
-        {/* STEP 5 */}
-        {step === 5 && (
-          <div className="animate-fade-in" key="s5">
-            <StepHead icon={FileText} title="Files & Links" desc="Upload audio and provide document links" />
+        {/* Step 1: Artist Info */}
+        {step === 0 && (
+          <div className="fade-in space-y-8">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">Artist Information</h2>
+              <p className="text-zinc-500 text-sm">Tell us about the artist(s) on this release</p>
+            </div>
 
-            {form.fullDriveFolderLink && (
-              <div className="card-purple rounded-xl p-4 mb-5 flex items-start gap-3 animate-fade-in">
-                <Sparkles className="w-5 h-5 text-[var(--purple-light)] mt-0.5 shrink-0" />
+            {/* Main Artist */}
+            <div className="glass-card rounded-2xl p-6">
+              <label className="block text-sm font-semibold mb-2">Main Artist <span className="text-red-400">*</span></label>
+              <input
+                type="text"
+                value={mainArtist}
+                onChange={e => setMainArtist(e.target.value)}
+                placeholder="Artist / Band name"
+                className="input-dark w-full px-4 py-3 rounded-xl"
+              />
+            </div>
+
+            {/* Collaborations */}
+            <div className="glass-card rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm text-white font-medium">Drive folder linked</p>
-                  <p className="text-xs text-[var(--text-muted)] mt-0.5">Individual WAV uploads below are optional.</p>
+                  <h3 className="font-semibold">Collaborations</h3>
+                  <p className="text-xs text-zinc-500">Other artists who collaborated on this release</p>
                 </div>
+                <button onClick={() => setCollaborations(prev => [...prev, emptyCollab()])} className="flex items-center gap-1 text-violet-400 text-sm hover:text-violet-300">
+                  <Plus className="w-4 h-4" /> Add
+                </button>
               </div>
-            )}
-
-            <div className="space-y-4">
-              {form.tracks.map((track, i) => (
-                <div key={track.id} className="card p-5">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-7 h-7 rounded-lg bg-[var(--purple)]/10 border border-[var(--purple)]/20 flex items-center justify-center">
-                      <span className="text-[11px] font-bold text-[var(--purple-light)]">{String(i + 1).padStart(2, '0')}</span>
-                    </div>
-                    <span className="text-sm font-semibold text-white">{track.title || `Track ${i + 1}`}</span>
+              {collaborations.map((c, i) => (
+                <div key={i} className="bg-zinc-900/50 rounded-xl p-4 mb-3 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="text"
+                      value={c.name}
+                      onChange={e => { const u = [...collaborations]; u[i] = { ...u[i], name: e.target.value }; setCollaborations(u); }}
+                      placeholder="Collaborator name"
+                      className="input-dark flex-1 px-3 py-2 rounded-lg text-sm"
+                    />
+                    <button onClick={() => setCollaborations(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
-
-                  <div className="space-y-3">
-                    <div>
-                      <label className="label">WAV File</label>
-                      <label className="input flex items-center gap-3 cursor-pointer hover:border-[var(--border-light)] transition">
-                        <Upload className="w-4 h-4 text-[var(--text-muted)] shrink-0" />
-                        <span className={`text-sm truncate ${track.wavFileName ? 'text-white' : 'text-[var(--text-muted)]'}`}>
-                          {track.wavFileName || 'Choose WAV file...'}
-                        </span>
-                        {track.wavFileName && <Check className="w-4 h-4 text-emerald-400 ml-auto shrink-0" />}
-                        <input type="file" accept=".wav,audio/wav" onChange={(e) => handleWavUpload(track.id, e)} className="hidden" />
-                      </label>
-                    </div>
-
-                    <div>
-                      <label className="label">Lyrics <span className="label-hint">(Google Docs Link)</span></label>
-                      <div className="relative">
-                        <input type="url" value={track.lyricsDocLink} onChange={e => updateTrack(track.id, 'lyricsDocLink', e.target.value)}
-                          className="input pr-10" placeholder="https://docs.google.com/document/..." />
-                        {track.lyricsDocLink && isValidUrl(track.lyricsDocLink) && (
-                          <ExternalLink className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
-                        )}
-                      </div>
-                      <Err k={`tr_${i}_lyrics`} />
-                    </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {(['spotify', 'appleMusic', 'anghami'] as const).map(platform => (
+                      <input
+                        key={platform}
+                        type="url"
+                        value={c.platformLinks[platform] || ''}
+                        onChange={e => { const u = [...collaborations]; u[i] = { ...u[i], platformLinks: { ...u[i].platformLinks, [platform]: e.target.value } }; setCollaborations(u); }}
+                        placeholder={platform === 'appleMusic' ? 'Apple Music link' : platform === 'anghami' ? 'Anghami link' : 'Spotify link'}
+                        className="input-dark px-3 py-2 rounded-lg text-xs"
+                      />
+                    ))}
                   </div>
                 </div>
               ))}
+              {collaborations.length === 0 && <p className="text-zinc-600 text-sm italic">No collaborations added</p>}
             </div>
 
-            <div className="mt-5">
-              <label className="label">Promo Pictures / Videos <span className="label-hint">(Drive Folder Link)</span></label>
-              <input type="url" value={form.promoFolderLink} onChange={e => set('promoFolderLink', e.target.value)} className="input" placeholder="https://drive.google.com/drive/folders/..." />
-              <Err k="promoFolderLink" />
+            {/* Features */}
+            <div className="glass-card rounded-2xl p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold">Features</h3>
+                  <p className="text-xs text-zinc-500">Featured artists on specific tracks</p>
+                </div>
+                <button onClick={() => setFeatures(prev => [...prev, emptyCollab()])} className="flex items-center gap-1 text-violet-400 text-sm hover:text-violet-300">
+                  <Plus className="w-4 h-4" /> Add
+                </button>
+              </div>
+              {features.map((f, i) => (
+                <div key={i} className="bg-zinc-900/50 rounded-xl p-4 mb-3 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="text"
+                      value={f.name}
+                      onChange={e => { const u = [...features]; u[i] = { ...u[i], name: e.target.value }; setFeatures(u); }}
+                      placeholder="Featured artist name"
+                      className="input-dark flex-1 px-3 py-2 rounded-lg text-sm"
+                    />
+                    <button onClick={() => setFeatures(prev => prev.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300">
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {(['spotify', 'appleMusic', 'anghami'] as const).map(platform => (
+                      <input
+                        key={platform}
+                        type="url"
+                        value={f.platformLinks[platform] || ''}
+                        onChange={e => { const u = [...features]; u[i] = { ...u[i], platformLinks: { ...u[i].platformLinks, [platform]: e.target.value } }; setFeatures(u); }}
+                        placeholder={platform === 'appleMusic' ? 'Apple Music link' : platform === 'anghami' ? 'Anghami link' : 'Spotify link'}
+                        className="input-dark px-3 py-2 rounded-lg text-xs"
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {features.length === 0 && <p className="text-zinc-600 text-sm italic">No features added</p>}
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={() => setStep(1)}
+                disabled={!isStep1Valid}
+                className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2"
+              >
+                Continue <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         )}
 
-        {/* STEP 6 */}
-        {step === 6 && (
-          <div className="animate-fade-in" key="s6">
-            <StepHead icon={ShieldCheck} title="Review & Submit" desc="Confirm your release details" />
+        {/* Step 2: Release Info + Cover Art */}
+        {step === 1 && (
+          <div className="fade-in space-y-8">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">Release Information</h2>
+              <p className="text-zinc-500 text-sm">Details about your release and cover art</p>
+            </div>
+
+            <div className="glass-card rounded-2xl p-6 space-y-6">
+              {/* Release Type */}
+              <div>
+                <label className="block text-sm font-semibold mb-3">Release Type <span className="text-red-400">*</span></label>
+                <div className="grid grid-cols-3 gap-3">
+                  {(['single', 'ep', 'album'] as const).map(type => (
+                    <button
+                      key={type}
+                      onClick={() => handleTypeChange(type)}
+                      className={`p-4 rounded-xl border text-center transition-all ${
+                        releaseType === type
+                          ? 'border-violet-500 bg-violet-500/10 text-violet-300'
+                          : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600'
+                      }`}
+                    >
+                      <div className="text-lg font-bold uppercase">{type}</div>
+                      <div className="text-xs mt-1">
+                        {type === 'single' ? '1 track' : type === 'ep' ? '3-6 tracks' : 'Up to 32 tracks'}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Title */}
+              <div>
+                <label className="block text-sm font-semibold mb-2">Release Title <span className="text-red-400">*</span></label>
+                <input
+                  type="text"
+                  value={releaseTitle}
+                  onChange={e => setReleaseTitle(e.target.value)}
+                  placeholder="Title of the release"
+                  className="input-dark w-full px-4 py-3 rounded-xl"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Release Date */}
+                <div>
+                  <label className="block text-sm font-semibold mb-2">Release Date <span className="text-red-400">*</span></label>
+                  <input
+                    type="date"
+                    value={releaseDate}
+                    onChange={e => setReleaseDate(e.target.value)}
+                    className="input-dark w-full px-4 py-3 rounded-xl"
+                  />
+                </div>
+
+                {/* Genre */}
+                <div>
+                  <label className="block text-sm font-semibold mb-2">Genre <span className="text-red-400">*</span></label>
+                  <select
+                    value={genre}
+                    onChange={e => setGenre(e.target.value)}
+                    className="input-dark w-full px-4 py-3 rounded-xl"
+                  >
+                    <option value="">Select genre</option>
+                    {GENRES.map(g => <option key={g} value={g}>{g}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {/* Explicit */}
+              <div>
+                <label className="block text-sm font-semibold mb-3">Explicit Content</label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setExplicitContent(false)}
+                    className={`px-5 py-2 rounded-lg border text-sm font-medium transition-all ${!explicitContent ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 text-zinc-500'}`}
+                  >No</button>
+                  <button
+                    onClick={() => setExplicitContent(true)}
+                    className={`px-5 py-2 rounded-lg border text-sm font-medium transition-all ${explicitContent ? 'border-red-500 bg-red-500/10 text-red-400' : 'border-zinc-800 text-zinc-500'}`}
+                  >Yes</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Cover Art */}
+            <div className="glass-card rounded-2xl p-6">
+              <label className="block text-sm font-semibold mb-2">Cover Art — Google Drive Link <span className="text-red-400">*</span></label>
+              <p className="text-xs text-zinc-500 mb-3">Upload your cover art (JPG 3000×3000) to Google Drive and paste the share link</p>
+              <div className="flex items-center gap-2">
+                <ExternalLink className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+                <input
+                  type="url"
+                  value={coverArtDriveLink}
+                  onChange={e => setCoverArtDriveLink(e.target.value)}
+                  placeholder="https://drive.google.com/file/d/..."
+                  className="input-dark w-full px-4 py-3 rounded-xl"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-between">
+              <button onClick={() => setStep(0)} className="px-6 py-3 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white transition-all flex items-center gap-2">
+                <ChevronLeft className="w-4 h-4" /> Back
+              </button>
+              <button
+                onClick={() => setStep(2)}
+                disabled={!isStep2Valid}
+                className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2"
+              >
+                Continue <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: Tracklist */}
+        {step === 2 && (
+          <div className="fade-in space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-2xl font-bold mb-1">Tracklist</h2>
+                <p className="text-zinc-500 text-sm">
+                  {limits.label} — {tracks.length}/{limits.max} tracks (min {limits.min})
+                </p>
+              </div>
+              {tracks.length < limits.max && (
+                <button onClick={addTrack} className="btn-primary px-4 py-2 rounded-lg flex items-center gap-1 text-sm">
+                  <Plus className="w-4 h-4" /> Add Track
+                </button>
+              )}
+            </div>
+
+            {tracks.map((track, idx) => (
+              <div key={idx} className="glass-card rounded-2xl p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-bold text-violet-400">Track {idx + 1}</h3>
+                  {tracks.length > limits.min && (
+                    <button onClick={() => removeTrack(idx)} className="text-red-400 hover:text-red-300 text-sm flex items-center gap-1">
+                      <Trash2 className="w-3 h-3" /> Remove
+                    </button>
+                  )}
+                </div>
+
+                {/* Title + Explicit */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Track Title <span className="text-red-400">*</span></label>
+                    <input
+                      type="text"
+                      value={track.title}
+                      onChange={e => updateTrack(idx, { title: e.target.value })}
+                      placeholder="Track title"
+                      className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Explicit</label>
+                    <div className="flex gap-2 mt-1">
+                      <button
+                        onClick={() => updateTrack(idx, { explicit: false })}
+                        className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium ${!track.explicit ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 text-zinc-500'}`}
+                      >No</button>
+                      <button
+                        onClick={() => updateTrack(idx, { explicit: true })}
+                        className={`flex-1 px-3 py-2 rounded-lg border text-xs font-medium ${track.explicit ? 'border-red-500 bg-red-500/10 text-red-400' : 'border-zinc-800 text-zinc-500'}`}
+                      >Yes</button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TikTok Preview Time */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Preview/TikTok Start</label>
+                    <input
+                      type="text"
+                      value={track.previewStart}
+                      onChange={e => updateTrack(idx, { previewStart: e.target.value })}
+                      placeholder="0:00"
+                      className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Preview/TikTok End</label>
+                    <input
+                      type="text"
+                      value={track.previewEnd}
+                      onChange={e => updateTrack(idx, { previewEnd: e.target.value })}
+                      placeholder="0:30"
+                      className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* WAV Drive Link */}
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-1">WAV File — Google Drive Link <span className="text-red-400">*</span></label>
+                  <div className="flex items-center gap-2">
+                    <ExternalLink className="w-4 h-4 text-zinc-500 flex-shrink-0" />
+                    <input
+                      type="url"
+                      value={track.wavDriveLink}
+                      onChange={e => updateTrack(idx, { wavDriveLink: e.target.value })}
+                      placeholder="https://drive.google.com/file/d/..."
+                      className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Lyrics */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Lyrics — Google Drive Link</label>
+                    <input
+                      type="url"
+                      value={track.lyricsDriveLink || ''}
+                      onChange={e => updateTrack(idx, { lyricsDriveLink: e.target.value })}
+                      placeholder="Drive link to lyrics file"
+                      className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-1">Lyrics — Google Docs Link</label>
+                    <input
+                      type="url"
+                      value={track.lyricsGoogleDocsLink || ''}
+                      onChange={e => updateTrack(idx, { lyricsGoogleDocsLink: e.target.value })}
+                      placeholder="Google Docs link"
+                      className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Credits */}
+                <div>
+                  <label className="block text-xs font-medium text-zinc-400 mb-2">Credits</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <input
+                      type="text"
+                      value={track.producedBy}
+                      onChange={e => updateTrack(idx, { producedBy: e.target.value })}
+                      placeholder="Produced by"
+                      className="input-dark px-3 py-2.5 rounded-lg text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={track.lyricsBy}
+                      onChange={e => updateTrack(idx, { lyricsBy: e.target.value })}
+                      placeholder="Lyrics by"
+                      className="input-dark px-3 py-2.5 rounded-lg text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={track.mixedBy}
+                      onChange={e => updateTrack(idx, { mixedBy: e.target.value })}
+                      placeholder="Mixed by"
+                      className="input-dark px-3 py-2.5 rounded-lg text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={track.masteredBy}
+                      onChange={e => updateTrack(idx, { masteredBy: e.target.value })}
+                      placeholder="Mastered by"
+                      className="input-dark px-3 py-2.5 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <div className="flex justify-between">
+              <button onClick={() => setStep(1)} className="px-6 py-3 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white transition-all flex items-center gap-2">
+                <ChevronLeft className="w-4 h-4" /> Back
+              </button>
+              <button
+                onClick={() => setStep(3)}
+                disabled={!isStep3Valid}
+                className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2"
+              >
+                Continue <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 4: Links & Submit */}
+        {step === 3 && (
+          <div className="fade-in space-y-8">
+            <div>
+              <h2 className="text-2xl font-bold mb-1">Additional Links & Submit</h2>
+              <p className="text-zinc-500 text-sm">Optional promo materials and final confirmation</p>
+            </div>
+
+            <div className="glass-card rounded-2xl p-6 space-y-5">
+              <div>
+                <label className="block text-sm font-semibold mb-2">Promo Pictures / Videos — Drive Link</label>
+                <p className="text-xs text-zinc-500 mb-2">Share a Google Drive folder with promo materials</p>
+                <input
+                  type="url"
+                  value={promoDriveLink}
+                  onChange={e => setPromoDriveLink(e.target.value)}
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  className="input-dark w-full px-4 py-3 rounded-xl"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-semibold mb-2">Main Drive Folder Link</label>
+                <p className="text-xs text-zinc-500 mb-2">Optional: link to a shared Drive folder with all release assets</p>
+                <input
+                  type="url"
+                  value={driveFolderLink}
+                  onChange={e => setDriveFolderLink(e.target.value)}
+                  placeholder="https://drive.google.com/drive/folders/..."
+                  className="input-dark w-full px-4 py-3 rounded-xl"
+                />
+              </div>
+            </div>
 
             {/* Summary */}
-            <div className="card p-5 mb-5">
-              <h3 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-4">Summary</h3>
-              <div className="grid grid-cols-2 gap-4">
-                {[
-                  { label: 'Artist', value: form.artistName },
-                  { label: 'Release', value: form.releaseTitle },
-                  { label: 'Type', value: form.releaseType, cap: true },
-                  { label: 'Date', value: form.releaseDate ? new Date(form.releaseDate + 'T00:00:00').toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : '—' },
-                  { label: 'Tracks', value: `${form.tracks.length} track${form.tracks.length !== 1 ? 's' : ''}` },
-                  { label: 'Cover Art', value: form.coverArtFileName || (form.fullDriveFolderLink ? 'Via Drive' : '—') },
-                ].map(item => (
-                  <div key={item.label}>
-                    <p className="text-xs text-[var(--text-muted)] mb-0.5">{item.label}</p>
-                    <p className={`text-sm text-white font-medium ${item.cap ? 'capitalize' : ''}`}>{item.value}</p>
-                  </div>
-                ))}
-              </div>
-
-              {(form.collaborations.length > 0 || form.features.length > 0) && (
-                <div className="border-t border-[var(--border)] mt-4 pt-3 grid grid-cols-2 gap-4">
-                  {form.collaborations.length > 0 && (
-                    <div>
-                      <p className="text-xs text-[var(--text-muted)] mb-0.5">Collaborations</p>
-                      <p className="text-sm text-white font-medium">{form.collaborations.map(c => c.name).join(', ')}</p>
-                    </div>
-                  )}
-                  {form.features.length > 0 && (
-                    <div>
-                      <p className="text-xs text-[var(--text-muted)] mb-0.5">Features</p>
-                      <p className="text-sm text-white font-medium">{form.features.map(f => f.name).join(', ')}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="border-t border-[var(--border)] mt-4 pt-3">
-                <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide mb-2">Tracks</p>
-                {form.tracks.map((t, i) => (
-                  <div key={t.id} className="flex items-center gap-3 py-1.5 text-sm">
-                    <span className="text-[var(--text-muted)] w-5 text-right text-xs">{String(i + 1).padStart(2, '0')}</span>
-                    <span className="text-white flex-1">{t.title || 'Untitled'}</span>
-                    {t.explicit && <span className="text-[10px] font-bold text-[var(--text-muted)] border border-[var(--border)] rounded px-1.5 py-0.5">E</span>}
-                    {t.wavFileName && <Check className="w-3.5 h-3.5 text-emerald-400" />}
-                  </div>
-                ))}
+            <div className="glass-card rounded-2xl p-6">
+              <h3 className="font-bold mb-4">Submission Summary</h3>
+              <div className="grid grid-cols-2 gap-y-3 text-sm">
+                <span className="text-zinc-500">Main Artist</span>
+                <span className="font-medium">{mainArtist}</span>
+                <span className="text-zinc-500">Release</span>
+                <span className="font-medium">{releaseTitle} ({releaseType.toUpperCase()})</span>
+                <span className="text-zinc-500">Genre</span>
+                <span className="font-medium">{genre}</span>
+                <span className="text-zinc-500">Release Date</span>
+                <span className="font-medium">{releaseDate}</span>
+                <span className="text-zinc-500">Tracks</span>
+                <span className="font-medium">{tracks.length}</span>
+                <span className="text-zinc-500">Explicit</span>
+                <span className="font-medium">{explicitContent ? 'Yes' : 'No'}</span>
               </div>
             </div>
 
             {/* Agreement */}
-            <div className="card p-5">
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <button type="button" onClick={() => set('agreement', !form.agreement)}
-                  className={`w-5 h-5 rounded-md flex items-center justify-center mt-0.5 shrink-0 transition-all ${
-                    form.agreement ? 'bg-[var(--purple)]' : 'border border-[var(--border-light)] group-hover:border-[var(--purple)]/40'
-                  }`}>
-                  {form.agreement && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
-                </button>
-                <span className="text-sm text-[var(--text-secondary)] leading-relaxed">
-                  I confirm all information is accurate and I own the rights to submit this release for distribution through In Lights.
-                </span>
-              </label>
-              <Err k="agreement" />
+            <label className="flex items-start gap-3 glass-card rounded-2xl p-6 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={rightsConfirmed}
+                onChange={e => setRightsConfirmed(e.target.checked)}
+                className="mt-1 w-5 h-5 accent-violet-600"
+              />
+              <span className="text-sm text-zinc-300">
+                I confirm all information is accurate and I own the rights to submit this release. I understand that submitting false or unauthorized content may result in removal and legal action.
+              </span>
+            </label>
+
+            {submitError && (
+              <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl">
+                {submitError}
+              </div>
+            )}
+
+            <div className="flex justify-between">
+              <button onClick={() => setStep(2)} className="px-6 py-3 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white transition-all flex items-center gap-2" disabled={submitting}>
+                <ChevronLeft className="w-4 h-4" /> Back
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={!isStep4Valid || submitting}
+                className="btn-primary px-8 py-3 rounded-xl flex items-center gap-2 text-lg disabled:opacity-60"
+              >
+                {submitting ? (
+                  <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting...</>
+                ) : (
+                  <><CheckCircle2 className="w-5 h-5" /> Submit Release</>
+                )}
+              </button>
             </div>
           </div>
         )}
-      </div>
-
-      {/* Navigation */}
-      <div className="flex items-center justify-between mt-6 mb-8">
-        {step > 1 ? (
-          <button type="button" onClick={prev} className="btn-secondary">
-            <ChevronLeft className="w-4 h-4" /> Back
-          </button>
-        ) : <div />}
-
-        {step < 6 ? (
-          <button type="button" onClick={next} className="btn-primary">
-            Continue <ChevronRight className="w-4 h-4" />
-          </button>
-        ) : (
-          <button type="button" onClick={handleSubmit} disabled={!form.agreement || submitting} className="btn-primary">
-            Submit Release
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function StepHead({ icon: Icon, title, desc }: { icon: typeof User; title: string; desc: string }) {
-  return (
-    <div className="flex items-center gap-3 mb-6">
-      <div className="w-10 h-10 rounded-xl bg-[var(--purple)]/10 border border-[var(--purple)]/20 flex items-center justify-center">
-        <Icon className="w-5 h-5 text-[var(--purple-light)]" />
-      </div>
-      <div>
-        <h2 className="text-lg font-bold text-white" style={{ fontFamily: "'Syne', sans-serif" }}>{title}</h2>
-        <p className="text-sm text-[var(--text-muted)]">{desc}</p>
       </div>
     </div>
   );

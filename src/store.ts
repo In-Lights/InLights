@@ -1,370 +1,401 @@
-import { ReleaseSubmission, AdminSettings } from './types';
+import { createClient } from '@supabase/supabase-js';
+import { ReleaseSubmission, AdminSettings, DEFAULT_ADMIN_SETTINGS } from './types';
 
-const SETTINGS_KEY = 'inlights_admin_settings';
-const AUTH_KEY = 'inlights_admin_auth';
-const RELEASES_KEY = 'inlights_releases';
+// ============================================================
+// Supabase Client
+// ============================================================
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-export const GENRES = [
-  'Pop', 'Hip-Hop/Rap', 'R&B/Soul', 'Electronic/Dance', 'Rock',
-  'Alternative', 'Country', 'Jazz', 'Classical', 'Latin',
-  'Reggaeton', 'Afrobeat', 'K-Pop', 'Metal', 'Folk',
-  'Indie', 'Blues', 'Punk', 'Funk', 'Gospel', 'Other'
-];
+export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-export const RELEASE_TYPE_LIMITS = {
-  single: { min: 1, max: 1 },
-  ep: { min: 3, max: 6 },
-  album: { min: 7, max: 32 }
-};
+// ============================================================
+// Generate Release ID: IL-2025-06-001
+// ============================================================
+async function generateReleaseId(): Promise<string> {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const prefix = `IL-${year}-${month}`;
 
-export const DEFAULT_SETTINGS: AdminSettings = {
-  companyName: 'In Lights',
-  companyLogo: 'https://i.ibb.co/1fPkzkSD/IMG-1647-1.png',
-  welcomeText: 'Submit Your Release',
-  welcomeDescription: 'Fill out the form below to submit your music release for review.',
-  adminUsername: 'admin',
-  adminPassword: 'inlights2025',
-  discordWebhookUrl: '',
-  googleSheetsWebhook: ''
-};
+  const { data } = await supabase
+    .from('releases')
+    .select('id')
+    .ilike('id', `${prefix}-%`);
 
-// ========== ADMIN SETTINGS (localStorage — admin browser only) ==========
-
-export function getAdminSettings(): AdminSettings {
-  const stored = localStorage.getItem(SETTINGS_KEY);
-  if (stored) {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(stored) };
-  }
-  return DEFAULT_SETTINGS;
+  const count = data ? data.length : 0;
+  return `${prefix}-${String(count + 1).padStart(3, '0')}`;
 }
 
-export function saveAdminSettings(settings: AdminSettings): void {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+// ============================================================
+// Settings
+// ============================================================
+export async function getAdminSettings(): Promise<AdminSettings> {
+  const { data, error } = await supabase
+    .from('settings')
+    .select('*')
+    .eq('id', 1)
+    .single();
+
+  if (error || !data) return { ...DEFAULT_ADMIN_SETTINGS };
+
+  return {
+    companyName: data.company_name ?? DEFAULT_ADMIN_SETTINGS.companyName,
+    companyLogo: data.company_logo ?? DEFAULT_ADMIN_SETTINGS.companyLogo,
+    adminUsername: data.admin_username ?? DEFAULT_ADMIN_SETTINGS.adminUsername,
+    adminPassword: data.admin_password ?? DEFAULT_ADMIN_SETTINGS.adminPassword,
+    formWelcomeText: data.form_welcome_text ?? DEFAULT_ADMIN_SETTINGS.formWelcomeText,
+    formDescription: data.form_description ?? DEFAULT_ADMIN_SETTINGS.formDescription,
+    notificationEmail: data.notification_email ?? '',
+    discordWebhook: data.discord_webhook ?? '',
+    googleSheetsWebhook: data.google_sheets_webhook ?? '',
+  };
+}
+
+export async function saveAdminSettings(settings: AdminSettings): Promise<void> {
+  await supabase.from('settings').upsert({
+    id: 1,
+    company_name: settings.companyName,
+    company_logo: settings.companyLogo,
+    admin_username: settings.adminUsername,
+    admin_password: settings.adminPassword,
+    form_welcome_text: settings.formWelcomeText,
+    form_description: settings.formDescription,
+    notification_email: settings.notificationEmail,
+    discord_webhook: settings.discordWebhook,
+    google_sheets_webhook: settings.googleSheetsWebhook,
+  });
+
   if (settings.googleSheetsWebhook) {
     pushSettingsToSheet(settings);
   }
 }
 
-// ========== AUTH ==========
-
-export function isAdminLoggedIn(): boolean {
-  return sessionStorage.getItem(AUTH_KEY) === 'true';
-}
-
-export function loginAdmin(username: string, password: string): boolean {
-  const settings = getAdminSettings();
-  if (username === settings.adminUsername && password === settings.adminPassword) {
-    sessionStorage.setItem(AUTH_KEY, 'true');
-    return true;
-  }
-  return false;
-}
-
-export function logoutAdmin(): void {
-  sessionStorage.removeItem(AUTH_KEY);
-}
-
-// ========== RELEASE ID GENERATION ==========
-
-function generateReleaseId(existingIds: string[]): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const prefix = `IL-${year}-${month}`;
-  
-  const thisMonthCount = existingIds.filter(id => id.startsWith(prefix)).length;
-  const num = String(thisMonthCount + 1).padStart(3, '0');
-  
-  return `${prefix}-${num}`;
-}
-
-// ========== GOOGLE SHEETS API ==========
-
-// Helper: POST to Google Apps Script
-// Google Apps Script redirects POST requests (302), so we need redirect: 'follow'
-// and use 'text/plain' content type to avoid CORS preflight
-async function postToSheet(url: string, data: Record<string, unknown>): Promise<boolean> {
-  try {
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(data),
-      redirect: 'follow'
-    });
-    return true;
-  } catch (e) {
-    console.error('Google Sheets POST failed:', e);
-    return false;
-  }
-}
-
-// Helper: GET from Google Apps Script
-async function getFromSheet<T>(url: string, params: Record<string, string>): Promise<T | null> {
-  try {
-    const queryString = new URLSearchParams(params).toString();
-    const fullUrl = `${url}?${queryString}`;
-    const response = await fetch(fullUrl, { redirect: 'follow' });
-    if (!response.ok) return null;
-    return await response.json() as T;
-  } catch (e) {
-    console.error('Google Sheets GET failed:', e);
-    return null;
-  }
-}
-
-// ========== PUBLIC BRANDING (fetched from Google Sheets for ALL visitors) ==========
-
+// Public branding — anyone can read (RLS: public SELECT on settings)
 export async function fetchPublicBranding(): Promise<{
   companyName: string;
   companyLogo: string;
-  welcomeText: string;
-  welcomeDescription: string;
+  formWelcomeText: string;
+  formDescription: string;
 } | null> {
-  // Try to get the webhook URL from localStorage (admin browser) or from URL params
-  const settings = getAdminSettings();
-  const webhookUrl = settings.googleSheetsWebhook;
-  if (!webhookUrl) return null;
+  const { data, error } = await supabase
+    .from('settings')
+    .select('company_name, company_logo, form_welcome_text, form_description')
+    .eq('id', 1)
+    .single();
 
-  return getFromSheet(webhookUrl, { action: 'getSettings' });
+  if (error || !data) return null;
+
+  return {
+    companyName: data.company_name ?? DEFAULT_ADMIN_SETTINGS.companyName,
+    companyLogo: data.company_logo ?? DEFAULT_ADMIN_SETTINGS.companyLogo,
+    formWelcomeText: data.form_welcome_text ?? DEFAULT_ADMIN_SETTINGS.formWelcomeText,
+    formDescription: data.form_description ?? DEFAULT_ADMIN_SETTINGS.formDescription,
+  };
 }
 
-// For public visitors who don't have admin settings in their localStorage,
-// we need a way to know the Google Sheets URL. We'll store it as a simple
-// config that gets embedded. For now, we try localStorage first.
-export async function fetchPublicBrandingWithUrl(webhookUrl: string): Promise<{
-  companyName: string;
-  companyLogo: string;
-  welcomeText: string;
-  welcomeDescription: string;
-} | null> {
-  if (!webhookUrl) return null;
-  return getFromSheet(webhookUrl, { action: 'getSettings' });
-}
-
-// Push branding settings to Google Sheets
 async function pushSettingsToSheet(settings: AdminSettings): Promise<void> {
   if (!settings.googleSheetsWebhook) return;
-  await postToSheet(settings.googleSheetsWebhook, {
-    action: 'saveSettings',
-    companyName: settings.companyName,
-    companyLogo: settings.companyLogo,
-    welcomeText: settings.welcomeText,
-    welcomeDescription: settings.welcomeDescription
-  });
+  try {
+    await fetch(settings.googleSheetsWebhook, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'saveSettings',
+        companyName: settings.companyName,
+        companyLogo: settings.companyLogo,
+        formWelcomeText: settings.formWelcomeText,
+        formDescription: settings.formDescription,
+      }),
+    });
+  } catch {}
 }
 
-// ========== RELEASES — THE GLOBAL DATABASE ==========
-
-// Fetch ALL releases from Google Sheets (the single source of truth)
-export async function fetchReleasesFromSheet(): Promise<ReleaseSubmission[]> {
-  const settings = getAdminSettings();
-  if (!settings.googleSheetsWebhook) return [];
-
-  const data = await getFromSheet<{ releases: ReleaseSubmission[] }>(
-    settings.googleSheetsWebhook,
-    { action: 'getReleases' }
-  );
-  
-  if (data && data.releases && data.releases.length > 0) {
-    // Cache in localStorage as backup
-    localStorage.setItem(RELEASES_KEY, JSON.stringify(data.releases));
-    return data.releases;
-  }
-  return [];
+// ============================================================
+// DB row <-> ReleaseSubmission mappers
+// ============================================================
+function rowToRelease(row: Record<string, unknown>): ReleaseSubmission {
+  return {
+    id: row.id as string,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    status: row.status as ReleaseSubmission['status'],
+    mainArtist: row.main_artist as string,
+    collaborations: (row.collaborations as ReleaseSubmission['collaborations']) ?? [],
+    features: (row.features as ReleaseSubmission['features']) ?? [],
+    releaseType: row.release_type as ReleaseSubmission['releaseType'],
+    releaseTitle: row.release_title as string,
+    releaseDate: row.release_date as string,
+    explicitContent: row.explicit_content as boolean,
+    genre: row.genre as string,
+    coverArtDriveLink: row.cover_art_drive_link as string,
+    tracks: (row.tracks as ReleaseSubmission['tracks']) ?? [],
+    promoDriveLink: (row.promo_drive_link as string) ?? undefined,
+    driveFolderLink: (row.drive_folder_link as string) ?? undefined,
+    rightsConfirmed: row.rights_confirmed as boolean,
+    labelNotes: (row.label_notes as string) ?? undefined,
+  };
 }
 
-// Get all releases — Google Sheets first, localStorage fallback
-export async function getAllReleases(): Promise<ReleaseSubmission[]> {
-  const settings = getAdminSettings();
-  
-  // If Google Sheets is configured, use it as the primary database
-  if (settings.googleSheetsWebhook) {
-    const sheetReleases = await fetchReleasesFromSheet();
-    if (sheetReleases.length > 0) return sheetReleases;
-  }
-  
-  // Fallback to localStorage
-  return getLocalReleases();
+function releaseToRow(release: Partial<ReleaseSubmission> & { id?: string }) {
+  const row: Record<string, unknown> = {};
+  if (release.id !== undefined) row.id = release.id;
+  if (release.status !== undefined) row.status = release.status;
+  if (release.mainArtist !== undefined) row.main_artist = release.mainArtist;
+  if (release.collaborations !== undefined) row.collaborations = release.collaborations;
+  if (release.features !== undefined) row.features = release.features;
+  if (release.releaseType !== undefined) row.release_type = release.releaseType;
+  if (release.releaseTitle !== undefined) row.release_title = release.releaseTitle;
+  if (release.releaseDate !== undefined) row.release_date = release.releaseDate;
+  if (release.explicitContent !== undefined) row.explicit_content = release.explicitContent;
+  if (release.genre !== undefined) row.genre = release.genre;
+  if (release.coverArtDriveLink !== undefined) row.cover_art_drive_link = release.coverArtDriveLink;
+  if (release.tracks !== undefined) row.tracks = release.tracks;
+  if (release.promoDriveLink !== undefined) row.promo_drive_link = release.promoDriveLink;
+  if (release.driveFolderLink !== undefined) row.drive_folder_link = release.driveFolderLink;
+  if (release.rightsConfirmed !== undefined) row.rights_confirmed = release.rightsConfirmed;
+  if (release.labelNotes !== undefined) row.label_notes = release.labelNotes;
+  return row;
 }
 
-// Submit a new release
-export async function submitRelease(
-  release: Omit<ReleaseSubmission, 'id' | 'status' | 'submittedAt' | 'labelNotes'>
-): Promise<{ success: boolean; id: string }> {
-  const settings = getAdminSettings();
+// ============================================================
+// CRUD — Releases
+// ============================================================
+export async function getSubmissions(): Promise<ReleaseSubmission[]> {
+  const { data, error } = await supabase
+    .from('releases')
+    .select('*')
+    .order('created_at', { ascending: false });
 
-  // Get existing IDs from both sources to avoid duplicates
-  const existingReleases = await getAllReleases();
-  const existingIds = existingReleases.map(r => r.id);
-  const id = generateReleaseId(existingIds);
+  if (error || !data) return [];
+  return data.map(rowToRelease);
+}
 
-  const fullRelease: ReleaseSubmission = {
-    ...release,
-    id,
+export async function addSubmission(
+  submission: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt' | 'status'>
+): Promise<ReleaseSubmission> {
+  const id = await generateReleaseId();
+  const now = new Date().toISOString();
+
+  const row = {
+    ...releaseToRow({ ...submission, id }),
     status: 'pending',
-    submittedAt: new Date().toISOString(),
-    labelNotes: ''
+    created_at: now,
+    updated_at: now,
   };
 
-  // Always save to localStorage as immediate backup
-  saveReleaseLocally(fullRelease);
+  const { data, error } = await supabase
+    .from('releases')
+    .insert(row)
+    .select()
+    .single();
 
-  // Save to Google Sheets (the global database)
-  if (settings.googleSheetsWebhook) {
-    await postToSheet(settings.googleSheetsWebhook, {
-      action: 'saveRelease',
-      release: fullRelease
-    });
-  }
+  if (error || !data) throw new Error(error?.message ?? 'Failed to save submission');
 
-  // Send Discord notification
-  if (settings.discordWebhookUrl) {
-    sendDiscordNotification(fullRelease, settings);
-  }
+  const newRelease = rowToRelease(data);
+  sendToGoogleSheets(newRelease);
+  sendDiscordNotification(newRelease);
 
-  return { success: true, id };
+  return newRelease;
 }
 
-// Update a release (admin edit)
-export async function updateRelease(id: string, updates: Partial<ReleaseSubmission>): Promise<boolean> {
-  const settings = getAdminSettings();
-
-  // Always update localStorage
-  updateReleaseLocally(id, updates);
-
-  // Update in Google Sheets
-  if (settings.googleSheetsWebhook) {
-    await postToSheet(settings.googleSheetsWebhook, {
-      action: 'updateRelease',
-      id,
-      updates
-    });
-  }
-
-  return true;
+export async function updateSubmission(
+  id: string,
+  updates: Partial<ReleaseSubmission>
+): Promise<void> {
+  const row = {
+    ...releaseToRow(updates),
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from('releases').update(row).eq('id', id);
+  if (error) throw new Error(error.message);
 }
 
-// ========== LOCAL STORAGE (backup / fallback) ==========
-
-function saveReleaseLocally(release: ReleaseSubmission): void {
-  const releases = getLocalReleases();
-  releases.push(release);
-  localStorage.setItem(RELEASES_KEY, JSON.stringify(releases));
+export async function updateSubmissionStatus(
+  id: string,
+  status: ReleaseSubmission['status']
+): Promise<void> {
+  return updateSubmission(id, { status });
 }
 
-function updateReleaseLocally(id: string, updates: Partial<ReleaseSubmission>): void {
-  const releases = getLocalReleases();
-  const idx = releases.findIndex(r => r.id === id);
-  if (idx >= 0) {
-    releases[idx] = { ...releases[idx], ...updates };
-    localStorage.setItem(RELEASES_KEY, JSON.stringify(releases));
-  }
+export async function deleteSubmission(id: string): Promise<void> {
+  const { error } = await supabase.from('releases').delete().eq('id', id);
+  if (error) throw new Error(error.message);
 }
 
-export function getLocalReleases(): ReleaseSubmission[] {
-  const stored = localStorage.getItem(RELEASES_KEY);
-  return stored ? JSON.parse(stored) : [];
+// ============================================================
+// Auth — in-memory session (no localStorage)
+// ============================================================
+let _adminSession: { loggedIn: boolean; expiry: number } = { loggedIn: false, expiry: 0 };
+
+export async function loginAdmin(username: string, password: string): Promise<boolean> {
+  const settings = await getAdminSettings();
+  return username === settings.adminUsername && password === settings.adminPassword;
 }
 
-// ========== DISCORD NOTIFICATIONS ==========
+export function setAdminSession(loggedIn: boolean): void {
+  _adminSession = {
+    loggedIn,
+    expiry: loggedIn ? Date.now() + 24 * 60 * 60 * 1000 : 0,
+  };
+}
 
-async function sendDiscordNotification(release: ReleaseSubmission, settings: AdminSettings): Promise<void> {
-  if (!settings.discordWebhookUrl) return;
+export function isAdminLoggedIn(): boolean {
+  return _adminSession.loggedIn && Date.now() < _adminSession.expiry;
+}
 
-  const trackList = release.tracks
-    .map((t, i) => `${i + 1}. ${t.title}${t.explicit ? ' 🔞' : ''}`)
-    .join('\n');
+export function logoutAdmin(): void {
+  _adminSession = { loggedIn: false, expiry: 0 };
+}
 
-  const fields = [
-    { name: '🎤 Artist', value: release.mainArtist, inline: true },
-    { name: '📀 Type', value: release.releaseType.toUpperCase(), inline: true },
-    { name: '🆔 ID', value: release.id, inline: true },
-    { name: '📅 Release Date', value: release.releaseDate || 'TBD', inline: true },
-    { name: '🎭 Genre', value: release.genre || 'N/A', inline: true },
-    { name: '🔞 Explicit', value: release.explicit ? 'Yes' : 'No', inline: true },
-    { name: '🎵 Tracklist', value: trackList || 'N/A', inline: false },
-  ];
-
-  if (release.coverArtDriveLink) {
-    fields.push({ name: '🖼️ Cover Art', value: release.coverArtDriveLink, inline: false });
-  }
-  if (release.driveFolderLink) {
-    fields.push({ name: '📁 Drive Folder', value: release.driveFolderLink, inline: false });
-  }
-  if (release.collaborations.length > 0) {
-    fields.push({ name: '🤝 Collaborations', value: release.collaborations.map(c => c.name).join(', '), inline: false });
-  }
-  if (release.features.length > 0) {
-    fields.push({ name: '✨ Features', value: release.features.map(f => f.name).join(', '), inline: false });
-  }
+// ============================================================
+// Google Sheets — append-only mirror
+// ============================================================
+async function sendToGoogleSheets(release: ReleaseSubmission): Promise<void> {
+  const settings = await getAdminSettings();
+  if (!settings.googleSheetsWebhook) return;
 
   try {
-    await fetch(settings.discordWebhookUrl, {
+    const trackNames = release.tracks.map(t => t.title).join(', ');
+    const collabNames = release.collaborations?.map(c => c.name).join(', ') ?? '';
+    const featureNames = release.features?.map(f => f.name).join(', ') ?? '';
+
+    await fetch(settings.googleSheetsWebhook, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'newRelease',
+        id: release.id,
+        mainArtist: release.mainArtist,
+        releaseTitle: release.releaseTitle,
+        releaseType: release.releaseType,
+        genre: release.genre,
+        releaseDate: release.releaseDate,
+        explicit: release.explicitContent ? 'Yes' : 'No',
+        tracks: trackNames,
+        trackCount: release.tracks.length,
+        collaborations: collabNames,
+        features: featureNames,
+        coverArtLink: release.coverArtDriveLink ?? '',
+        driveFolderLink: release.driveFolderLink ?? '',
+        promoLink: release.promoDriveLink ?? '',
+        status: release.status,
+        submittedAt: release.createdAt,
+      }),
+    });
+  } catch {}
+}
+
+// ============================================================
+// Discord Webhook
+// ============================================================
+async function sendDiscordNotification(release: ReleaseSubmission): Promise<void> {
+  const settings = await getAdminSettings();
+  if (!settings.discordWebhook) return;
+
+  try {
+    const trackList = release.tracks
+      .map((t, i) => `${i + 1}. ${t.title}${t.explicit ? ' 🔞' : ''}`)
+      .join('\n');
+
+    const fields: Array<{ name: string; value: string; inline: boolean }> = [
+      { name: '🆔 Release ID', value: release.id, inline: true },
+      { name: '🎤 Main Artist', value: release.mainArtist, inline: true },
+      { name: '💿 Title', value: release.releaseTitle, inline: true },
+      { name: '📀 Type', value: release.releaseType.toUpperCase(), inline: true },
+      { name: '🎸 Genre', value: release.genre || 'N/A', inline: true },
+      { name: '📅 Release Date', value: release.releaseDate || 'TBD', inline: true },
+      { name: '🔞 Explicit', value: release.explicitContent ? 'Yes' : 'No', inline: true },
+      { name: `🎵 Tracks (${release.tracks.length})`, value: trackList || 'None', inline: false },
+    ];
+
+    if (release.collaborations?.length) {
+      fields.push({ name: '🤝 Collaborations', value: release.collaborations.map(c => c.name).join(', '), inline: true });
+    }
+    if (release.features?.length) {
+      fields.push({ name: '⭐ Features', value: release.features.map(f => f.name).join(', '), inline: true });
+    }
+    if (release.coverArtDriveLink) {
+      fields.push({ name: '🖼️ Cover Art', value: `[View on Drive](${release.coverArtDriveLink})`, inline: true });
+    }
+    if (release.driveFolderLink) {
+      fields.push({ name: '📁 Drive Folder', value: `[Open Folder](${release.driveFolderLink})`, inline: true });
+    }
+
+    await fetch(settings.discordWebhook, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: settings.companyName || 'In Lights',
-        avatar_url: settings.companyLogo,
+        avatar_url: settings.companyLogo || '',
         embeds: [{
-          title: `🎵 New Release Submission: ${release.releaseTitle}`,
-          color: 0x9333ea,
+          title: '🎵 New Release Submission',
+          description: `**${release.mainArtist}** submitted a new **${release.releaseType.toUpperCase()}**: **${release.releaseTitle}**`,
+          color: 0x8B5CF6,
           fields,
-          thumbnail: settings.companyLogo ? { url: settings.companyLogo } : undefined,
-          footer: { text: `${settings.companyName} Release System` },
-          timestamp: new Date().toISOString()
-        }]
-      })
+          footer: {
+            text: `${settings.companyName || 'In Lights'} • Release Management`,
+            icon_url: settings.companyLogo || undefined,
+          },
+          timestamp: new Date().toISOString(),
+        }],
+      }),
     });
-  } catch (e) {
-    console.error('Discord notification failed:', e);
+  } catch (err) {
+    console.error('Discord notification failed:', err);
   }
 }
 
-// Send test Discord message
-export async function sendTestDiscord(webhookUrl: string): Promise<boolean> {
+export async function testDiscordWebhook(webhookUrl: string): Promise<boolean> {
   try {
-    const settings = getAdminSettings();
-    const res = await fetch(webhookUrl, {
+    const settings = await getAdminSettings();
+    const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: settings.companyName || 'In Lights',
-        avatar_url: settings.companyLogo,
+        avatar_url: settings.companyLogo || '',
         embeds: [{
-          title: '✅ Test Notification',
-          description: 'Your Discord webhook is working correctly! Release notifications will appear here.',
-          color: 0x22c55e,
-          footer: { text: `${settings.companyName} Release System` },
-          timestamp: new Date().toISOString()
-        }]
-      })
+          title: '✅ Webhook Connected!',
+          description: 'Discord notifications are working. You will receive a notification here every time someone submits a new release.',
+          color: 0x10B981,
+          footer: { text: `${settings.companyName || 'In Lights'} • Release Management` },
+          timestamp: new Date().toISOString(),
+        }],
+      }),
     });
-    return res.ok;
+    return response.ok || response.status === 204;
   } catch {
     return false;
   }
 }
 
-// ========== CSV EXPORT ==========
-
-export function exportReleasesToCSV(releases: ReleaseSubmission[]): void {
-  const headers = ['ID', 'Status', 'Submitted', 'Artist', 'Title', 'Type', 'Genre', 'Release Date', 'Explicit', 'Tracks', 'Cover Art', 'Drive Folder', 'Promo Link', 'Label Notes'];
+// ============================================================
+// CSV Export (client-side, no DB needed)
+// ============================================================
+export function exportToCSV(releases: ReleaseSubmission[]): void {
+  const headers = ['ID', 'Main Artist', 'Title', 'Type', 'Genre', 'Release Date', 'Explicit', 'Tracks', 'Status', 'Submitted'];
   const rows = releases.map(r => [
-    r.id, r.status, r.submittedAt, r.mainArtist, r.releaseTitle,
-    r.releaseType, r.genre, r.releaseDate, r.explicit ? 'Yes' : 'No',
+    r.id,
+    r.mainArtist,
+    r.releaseTitle,
+    r.releaseType,
+    r.genre,
+    r.releaseDate,
+    r.explicitContent ? 'Yes' : 'No',
     r.tracks.map(t => t.title).join(' | '),
-    r.coverArtDriveLink, r.driveFolderLink, r.promoDriveLink, r.labelNotes
+    r.status,
+    new Date(r.createdAt).toLocaleDateString(),
   ]);
 
-  const csv = [headers, ...rows]
-    .map(row => row.map(cell => `"${String(cell || '').replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-  
+  const csv = [headers, ...rows].map(row => row.map(cell => `"${cell}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `releases-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `releases-${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }

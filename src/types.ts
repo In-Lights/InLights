@@ -2,60 +2,98 @@ export type ReleaseType = 'single' | 'ep' | 'album';
 export type ReleaseStatus = 'pending' | 'approved' | 'scheduled' | 'released' | 'rejected';
 
 export interface PlatformLinks {
-  spotify: string;
-  appleMusic: string;
-  anghami: string;
+  spotify?: string;
+  appleMusic?: string;
+  anghami?: string;
 }
 
 export interface Collaborator {
   name: string;
-  platforms: PlatformLinks;
+  role: string;
+  platformLinks: PlatformLinks;
 }
 
-export interface TrackCredits {
+export interface Track {
+  title: string;
+  previewStart: string; // TikTok preview start time
+  previewEnd: string;   // TikTok preview end time
+  explicit: boolean;
+  wavDriveLink: string;
+  lyricsDriveLink?: string;
+  lyricsGoogleDocsLink?: string;
   producedBy: string;
   lyricsBy: string;
   mixedBy: string;
   masteredBy: string;
 }
 
-export interface Track {
-  title: string;
-  explicit: boolean;
-  tiktokPreview: string;
-  wavDriveLink: string;
-  lyricsDocsLink: string;
-  credits: TrackCredits;
-}
-
 export interface ReleaseSubmission {
   id: string;
+  createdAt: string;
+  updatedAt: string;
   status: ReleaseStatus;
-  submittedAt: string;
+
+  // Artist Info (Step 1)
   mainArtist: string;
   collaborations: Collaborator[];
   features: Collaborator[];
+
+  // Release Info (Step 2)
   releaseType: ReleaseType;
   releaseTitle: string;
   releaseDate: string;
+  explicitContent: boolean;
   genre: string;
-  explicit: boolean;
+
+  // Cover Art (Step 2)
   coverArtDriveLink: string;
+
+  // Tracks (Step 3)
   tracks: Track[];
-  promoDriveLink: string;
-  driveFolderLink: string;
-  useAllInOneDrive: boolean;
-  agreement: boolean;
-  labelNotes: string;
+
+  // Files & Links (Step 4)
+  promoDriveLink?: string;
+  driveFolderLink?: string;
+
+  // Agreement
+  rightsConfirmed: boolean;
+
+  // Admin
+  labelNotes?: string;
 }
 
 export interface AdminSettings {
   companyName: string;
   companyLogo: string;
-  welcomeText: string;
-  welcomeDescription: string;
   adminUsername: string;
   adminPassword: string;
-  discordWebhookUrl: string;
-  googleSheetsWebhook: string;
+  formWelcomeText: string;
+  formDescription: string;
+  notificationEmail?: string;
+  discordWebhook?: string;
+  googleSheetsWebhook?: string;
 }
+
+export const RELEASE_TYPE_LIMITS: Record<ReleaseType, { min: number; max: number; label: string }> = {
+  single: { min: 1, max: 1, label: 'Single' },
+  ep: { min: 3, max: 6, label: 'EP' },
+  album: { min: 7, max: 32, label: 'Album' },
+};
+
+export const GENRES = [
+  'Pop', 'Hip-Hop/Rap', 'R&B/Soul', 'Electronic/Dance', 'Rock', 'Alternative',
+  'Indie', 'Jazz', 'Classical', 'Country', 'Latin', 'Afrobeats', 'Reggaeton',
+  'K-Pop', 'Metal', 'Punk', 'Folk', 'Blues', 'Gospel', 'Soundtrack', 'Other'
+];
+
+export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
+  companyName: 'In Lights',
+  companyLogo: 'https://i.ibb.co/1fPkzkSD/IMG-1647-1.png',
+  adminUsername: 'admin',
+  adminPassword: 'inlights2025',
+  formWelcomeText: 'Submit Your Release',
+  formDescription: 'Fill out the form below to submit your music release to In Lights.',
+  notificationEmail: '',
+  discordWebhook: '',
+  googleSheetsWebhook: '',
+};
