@@ -166,6 +166,9 @@ export interface AdminSettings {
   labelEmail: string;
   labelInstagram: string;
   labelWebsite: string;
+
+  // Label note templates — quick-insert snippets for admin notes
+  noteTemplates: string; // newline-separated list of template strings
 }
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
@@ -223,6 +226,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   labelEmail: '',
   labelInstagram: '',
   labelWebsite: '',
+  noteTemplates: 'Cover art too small — must be 3000×3000px minimum\nMissing ISRC codes — please provide before approval\nRelease date too soon — minimum 7 days notice required\nWAV files not received — please upload to Drive\nMissing producer credits — required for all tracks\nExplicit content not flagged correctly\nDuplicate submission — please check your previous submission\nArtist profile links missing — add Spotify and Apple Music URLs',
 };
 
 export const RELEASE_TYPE_LIMITS: Record<ReleaseType, { min: number; max: number; label: string }> = {

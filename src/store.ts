@@ -126,14 +126,12 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     emailFromAddress: data.email_from_address ?? '',
     emailNotifyOnSubmission: data.email_notify_on_submission ?? false,
     emailNotifyArtistOnStatus: data.email_notify_artist_on_status ?? false,
+    noteTemplates: data.note_templates ?? DEFAULT_ADMIN_SETTINGS.noteTemplates,
   };
 }
 
 export async function saveAdminSettings(settings: AdminSettings): Promise<void> {
-  // Ensure row exists first (INSERT only fires if missing, safe due to ON CONFLICT DO NOTHING)
-  await supabase.from('settings').insert({ settings_id: 1 }).then(() => {}); // silent if already exists
-
-  // ── CORE UPDATE ──────────────────────────────────────────────────────────────
+  // ── CORE: columns guaranteed to exist in every install ──────────────────────
   const { error } = await supabase
     .from('settings')
     .update({
@@ -181,21 +179,25 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       label_email: settings.labelEmail || null,
       label_instagram: settings.labelInstagram || null,
       label_website: settings.labelWebsite || null,
-      // Gmail email fields
-      gmail_user: settings.gmailUser || null,
-      gmail_app_password: settings.gmailAppPassword || null,
-      email_from_name: settings.emailFromName || null,
-      email_from_address: settings.emailFromAddress || null,
-      email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
-      email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
-      // Extended settings
-      pending_reminder_days: settings.pendingReminderDays ?? 2,
-      internal_comments_enabled: settings.internalCommentsEnabled ?? true,
-      release_reminder_days: settings.releaseReminderDays ?? 7,
     })
     .eq('settings_id', 1);
 
   if (error) throw new Error(error.message);
+
+  // ── EXTENDED: newer columns — saved silently so missing columns never break the core save.
+  // Run add_columns.sql in Supabase SQL Editor once to unlock these fully.
+  await supabase.from('settings').update({
+    pending_reminder_days: settings.pendingReminderDays ?? 2,
+    internal_comments_enabled: settings.internalCommentsEnabled ?? true,
+    release_reminder_days: settings.releaseReminderDays ?? 7,
+    gmail_user: settings.gmailUser || null,
+    gmail_app_password: settings.gmailAppPassword || null,
+    email_from_name: settings.emailFromName || null,
+    email_from_address: settings.emailFromAddress || null,
+    email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
+    email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
+    note_templates: settings.noteTemplates || null,
+  }).eq('settings_id', 1).then(() => {}); // intentionally silent
 }
 
 // Public branding — anyone can read (RLS: public SELECT on settings)
@@ -1139,4 +1141,49 @@ export function exportToCSV(releases: ReleaseSubmission[]): void {
   a.download = `releases-${new Date().toISOString().split('T')[0]}.csv`;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// Offline Queue — submissions made while offline are stored
+// locally and synced automatically when connection restores.
+// ============================================================
+const OFFLINE_QUEUE_KEY = 'inlights_offline_queue';
+
+export interface QueuedSubmission {
+  queuedAt: string;
+  data: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt'>;
+}
+
+export function getOfflineQueue(): QueuedSubmission[] {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function saveOfflineQueue(q: QueuedSubmission[]) {
+  try { localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q)); } catch {}
+}
+
+export function queueSubmissionOffline(
+  data: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt'>
+): void {
+  const q = getOfflineQueue();
+  q.push({ queuedAt: new Date().toISOString(), data });
+  saveOfflineQueue(q);
+}
+
+export async function flushOfflineQueue(): Promise<number> {
+  const q = getOfflineQueue();
+  if (q.length === 0) return 0;
+  let flushed = 0;
+  const remaining: QueuedSubmission[] = [];
+  for (const item of q) {
+    try {
+      await addSubmission(item.data);
+      flushed++;
+    } catch {
+      remaining.push(item); // keep failed ones
+    }
+  }
+  saveOfflineQueue(remaining);
+  return flushed;
 }

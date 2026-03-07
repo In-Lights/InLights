@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Bell, X, Music2, CheckCircle, Clock, Calendar, XCircle } from 'lucide-react';
-import { supabase } from '../store';
+import { supabase, getSubmissions } from '../store';
 import { ReleaseStatus } from '../types';
 interface Notification {
   id: string;
@@ -14,6 +14,7 @@ interface Notification {
 }
 
 const STORAGE_KEY = 'inlights_notifications';
+const SEEN_KEY = 'inlights_seen_releases'; // tracks release IDs + statuses we've already notified about
 
 function loadNotifications(): Notification[] {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }
@@ -22,6 +23,16 @@ function loadNotifications(): Notification[] {
 
 function saveNotifications(n: Notification[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(n.slice(0, 50)));
+}
+
+function loadSeen(): Record<string, string> {
+  // { [releaseId]: status } — tracks what we last notified for each release
+  try { return JSON.parse(localStorage.getItem(SEEN_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function saveSeen(seen: Record<string, string>) {
+  try { localStorage.setItem(SEEN_KEY, JSON.stringify(seen)); } catch {}
 }
 
 const STATUS_ICON: Record<ReleaseStatus, React.FC<{ className?: string }>> = {
@@ -92,12 +103,90 @@ export default function NotificationCenter({ onNavigateToRelease }: Props) {
     setTimeout(() => setRinging(false), 1200);
   };
 
-  // Supabase realtime
+  // Supabase realtime + polling fallback
+  // Realtime only works if the `releases` table is added to the Supabase realtime publication.
+  // The polling fallback ensures notifications always appear even without realtime configured.
   useEffect(() => {
+    const seenRef = { current: loadSeen() };
+    let realtimeWorking = false;
+
+    // ── polling check ──────────────────────────────────────
+    const poll = async () => {
+      try {
+        const releases = await getSubmissions();
+        const seen = seenRef.current;
+        const newNotifs: Notification[] = [];
+
+        for (const r of releases) {
+          const seenStatus = seen[r.id];
+          if (!seenStatus) {
+            // Brand new release we haven't seen before
+            newNotifs.push({
+              id: crypto.randomUUID(),
+              type: 'new_submission',
+              title: 'New Submission',
+              body: `${r.mainArtist} — ${r.releaseTitle}`,
+              releaseId: r.id,
+              read: false,
+              createdAt: r.createdAt,
+            });
+            seen[r.id] = r.status;
+          } else if (seenStatus !== r.status) {
+            // Status changed since we last checked
+            newNotifs.push({
+              id: crypto.randomUUID(),
+              type: 'status_change',
+              title: 'Status Updated',
+              body: `${r.mainArtist} — ${r.releaseTitle}`,
+              releaseId: r.id,
+              status: r.status,
+              read: false,
+              createdAt: new Date().toISOString(),
+            });
+            seen[r.id] = r.status;
+          }
+        }
+
+        if (newNotifs.length > 0) {
+          saveSeen(seen);
+          seenRef.current = seen;
+          setNotifications(prev => {
+            const existingIds = new Set(prev.map(n => n.releaseId + n.type + (n.status ?? '')));
+            const truly_new = newNotifs.filter(n => !existingIds.has(n.releaseId + n.type + (n.status ?? '')));
+            if (truly_new.length === 0) return prev;
+            ring();
+            truly_new.forEach(n => {
+              if (Notification.permission === 'granted') {
+                new Notification(n.title, { body: n.body, icon: '/favicon.ico' });
+              }
+            });
+            return [...truly_new, ...prev];
+          });
+        } else {
+          // Initialise seen map silently on first load
+          let changed = false;
+          for (const r of releases) {
+            if (!seen[r.id]) { seen[r.id] = r.status; changed = true; }
+          }
+          if (changed) { saveSeen(seen); seenRef.current = seen; }
+        }
+      } catch { /* network error — ignore */ }
+    };
+
+    // Run once immediately to seed seen map, then every 30s
+    poll();
+    const pollInterval = setInterval(poll, 30_000);
+
+    // ── realtime (bonus — fires instantly if table is in publication) ──
     const channel = supabase
       .channel('notif-center')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'releases' }, payload => {
+        realtimeWorking = true;
         const row = payload.new as Record<string, unknown>;
+        const seen = seenRef.current;
+        if (seen[row.id as string]) return; // already handled by poll
+        seen[row.id as string] = row.status as string;
+        saveSeen(seen); seenRef.current = seen;
         const notif: Notification = {
           id: crypto.randomUUID(),
           type: 'new_submission',
@@ -114,9 +203,14 @@ export default function NotificationCenter({ onNavigateToRelease }: Props) {
         }
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'releases' }, payload => {
+        realtimeWorking = true;
         const row = payload.new as Record<string, unknown>;
         const old = payload.old as Record<string, unknown>;
         if (row.status === old.status) return;
+        const seen = seenRef.current;
+        if (seen[row.id as string] === row.status) return; // already handled by poll
+        seen[row.id as string] = row.status as string;
+        saveSeen(seen); seenRef.current = seen;
         const notif: Notification = {
           id: crypto.randomUUID(),
           type: 'status_change',
@@ -132,7 +226,10 @@ export default function NotificationCenter({ onNavigateToRelease }: Props) {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      clearInterval(pollInterval);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // Request browser notification permission

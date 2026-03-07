@@ -1006,6 +1006,19 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
                 className="input-dark w-full px-4 py-3 rounded-xl" />
             </Field>
           </Section>
+
+          <Section title="Label Note Templates" desc="Quick-insert snippets admins can use when writing notes on a release. One template per line.">
+            <Field label="Templates (one per line)">
+              <textarea
+                value={settings.noteTemplates ?? ''}
+                onChange={e => set('noteTemplates', e.target.value)}
+                rows={8}
+                placeholder={'Cover art too small — must be 3000×3000px minimum\nMissing ISRC codes\nRelease date too soon'}
+                className="input-dark w-full px-4 py-3 rounded-xl text-sm resize-none font-mono"
+              />
+              <p className="text-xs text-zinc-600 mt-1">Admins see these as a dropdown next to the Label Notes field on any release.</p>
+            </Field>
+          </Section>
         </div>
       )}
 

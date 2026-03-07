@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square, ShieldOff, MessageSquare } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square, ShieldOff, MessageSquare, ChevronDown } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus, ReleaseType, Track, Collaborator, RELEASE_TYPE_LIMITS, GENRES, ReleasePriority, ChecklistItem } from '../types';
 import { updateSubmission } from '../store';
 import { StatusBadge, ReleaseTypeBadge } from './ui/Badge';
@@ -7,12 +7,14 @@ import Lightbox from './Lightbox';
 import AudioPlayer from './AudioPlayer';
 import { usePermissions } from '../utils/permissions';
 import InternalComments from './InternalComments';
+import SpotifyPitchGenerator from './SpotifyPitchGenerator';
 
 interface Props {
   release: ReleaseSubmission;
   onBack: () => void;
   commentsEnabled?: boolean;
   statusLabels?: { pending: string; approved: string; scheduled: string; released: string; rejected: string };
+  noteTemplates?: string;
 }
 
 const emptyTrack = (): Track => ({
@@ -85,7 +87,7 @@ function CommentsPopover({ releaseId }: { releaseId: string }) {
   );
 }
 
-export default function ReleaseDetail({ release: initialRelease, onBack, commentsEnabled = true, statusLabels }: Props) {
+export default function ReleaseDetail({ release: initialRelease, onBack, commentsEnabled = true, statusLabels, noteTemplates = '' }: Props) {
   const SL = statusLabels ?? { pending: 'Pending', approved: 'Approved', scheduled: 'Scheduled', released: 'Released', rejected: 'Rejected' };
   const { role, can } = usePermissions();
   const [editing, setEditing] = useState(false);
@@ -580,6 +582,8 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
         <div className="space-y-6">
           {/* Audio Player */}
           <AudioPlayer tracks={tracks} releaseTitle={formatDisplayTitle(releaseTitle, releaseType, tracks, features)} />
+          {/* Spotify Pitch Generator */}
+          <SpotifyPitchGenerator release={initialRelease} />
           <div className="glass-card rounded-2xl p-6">
             <h3 className="font-bold mb-4">Admin Controls</h3>
             <div className="space-y-4">
@@ -627,7 +631,32 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                 )}
               </div>
               <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2">Label Notes</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-medium text-zinc-400">Label Notes</label>
+                  {noteTemplates && (() => {
+                    const templates = noteTemplates.split('\n').map(t => t.trim()).filter(Boolean);
+                    if (!templates.length) return null;
+                    return (
+                      <div className="relative group">
+                        <button className="flex items-center gap-1 text-xs text-violet-400 hover:text-violet-300 transition-colors px-2 py-1 rounded-lg hover:bg-violet-500/10">
+                          <ChevronDown className="w-3 h-3" /> Templates
+                        </button>
+                        <div className="absolute right-0 top-full mt-1 z-50 w-72 rounded-xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/60 overflow-hidden opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-all">
+                          <p className="text-[10px] text-zinc-600 px-3 pt-2.5 pb-1 uppercase tracking-wider font-semibold">Quick insert</p>
+                          {templates.map((t, i) => (
+                            <button
+                              key={i}
+                              onClick={() => setNotes(prev => prev ? `${prev}\n${t}` : t)}
+                              className="w-full text-left px-3 py-2 text-xs text-zinc-300 hover:bg-white/5 hover:text-white transition-colors border-t border-white/[0.04] first:border-0"
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
                 <textarea
                   value={notes}
                   onChange={e => setNotes(e.target.value)}

@@ -8,7 +8,7 @@ import {
   Track, Collaborator, ReleaseType, RELEASE_TYPE_LIMITS, GENRES,
   ReleaseSubmission, AdminSettings, DEFAULT_ADMIN_SETTINGS
 } from '../types';
-import { addSubmission, checkForDuplicates, saveFormDraft, loadFormDraft, clearFormDraft, type DuplicateWarning } from '../store';
+import { addSubmission, checkForDuplicates, saveFormDraft, loadFormDraft, clearFormDraft, queueSubmissionOffline, flushOfflineQueue, getOfflineQueue, type DuplicateWarning } from '../store';
 import DrivePickerButton from './DrivePickerButton';
 
 // ── date utils ───────────────────────────────────────────────
@@ -236,27 +236,69 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
     (!settings.requireDriveFolder || driveFolderLink.trim().length > 0) &&
     (!settings.requirePromoMaterials || promoDriveLink.trim().length > 0);
 
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
+  const [queuedCount, setQueuedCount] = useState(getOfflineQueue().length);
+
+  // Monitor online/offline status and flush queue when back online
+  useEffect(() => {
+    const onOnline = async () => {
+      setIsOffline(false);
+      const flushed = await flushOfflineQueue();
+      if (flushed > 0) {
+        setQueuedCount(0);
+        onSubmitted?.();
+      }
+    };
+    const onOffline = () => setIsOffline(true);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    // Try flush on mount in case they were offline before
+    if (navigator.onLine) flushOfflineQueue().then(n => { if (n > 0) { setQueuedCount(0); onSubmitted?.(); } });
+    return () => { window.removeEventListener('online', onOnline); window.removeEventListener('offline', onOffline); };
+  }, []);
+
   // ── submit ──
   const handleSubmit = async () => {
     setSubmitting(true); setSubmitError('');
+    const data: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
+      mainArtist, collaborations: collaborations.filter(c => c.name.trim()),
+      features: features.filter(f => f.name.trim()),
+      releaseType, releaseTitle, releaseDate, explicitContent, genre,
+      coverArtDriveLink, coverArtImageUrl: '', tracks,
+      promoDriveLink: promoDriveLink || undefined,
+      driveFolderLink: driveFolderLink || undefined,
+      rightsConfirmed,
+      artistEmail: artistEmail.trim() || undefined,
+    };
+
+    // If offline — queue locally and show success
+    if (!navigator.onLine) {
+      queueSubmissionOffline(data);
+      setQueuedCount(q => q + 1);
+      setSubmissionId('QUEUED');
+      setSubmitted(true);
+      clearFormDraft();
+      setSubmitting(false);
+      return;
+    }
+
     try {
-      const data: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
-        mainArtist, collaborations: collaborations.filter(c => c.name.trim()),
-        features: features.filter(f => f.name.trim()),
-        releaseType, releaseTitle, releaseDate, explicitContent, genre,
-        coverArtDriveLink, coverArtImageUrl: '', tracks,
-        promoDriveLink: promoDriveLink || undefined,
-        driveFolderLink: driveFolderLink || undefined,
-        rightsConfirmed,
-        artistEmail: artistEmail.trim() || undefined,
-      };
       const result = await addSubmission(data);
       setSubmissionId(result);
       setSubmitted(true);
       clearFormDraft();
       onSubmitted?.();
     } catch {
-      setSubmitError('Submission failed. Please check your connection and try again.');
+      // Network error mid-submit — queue it
+      if (!navigator.onLine) {
+        queueSubmissionOffline(data);
+        setQueuedCount(q => q + 1);
+        setSubmissionId('QUEUED');
+        setSubmitted(true);
+        clearFormDraft();
+      } else {
+        setSubmitError('Submission failed. Please check your connection and try again.');
+      }
     } finally { setSubmitting(false); }
   };
 
@@ -300,22 +342,32 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
 
   // ── success screen ──
   if (submitted) {
+    const isQueued = submissionId === 'QUEUED';
     return (
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="glass-card rounded-2xl p-8 md:p-12 max-w-lg w-full text-center fade-in">
-          <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 accent-bg-subtle">
-            <CheckCircle2 className="w-10 h-10 accent-text" />
+          <div className={`w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 ${isQueued ? 'bg-amber-500/10' : 'accent-bg-subtle'}`}>
+            <CheckCircle2 className={`w-10 h-10 ${isQueued ? 'text-amber-400' : 'accent-text'}`} />
           </div>
-          <h2 className="text-2xl font-bold mb-2">Release Submitted!</h2>
+          <h2 className="text-2xl font-bold mb-2">{isQueued ? 'Saved Offline!' : 'Release Submitted!'}</h2>
           <p className="text-zinc-400 mb-6">
-            {settings.submissionSuccessMessage || DEFAULT_ADMIN_SETTINGS.submissionSuccessMessage}
+            {isQueued
+              ? "You're offline. Your submission has been saved on this device and will be sent automatically when your connection is restored."
+              : (settings.submissionSuccessMessage || DEFAULT_ADMIN_SETTINGS.submissionSuccessMessage)}
           </p>
-          <div className="bg-zinc-900/60 rounded-xl p-4 mb-6 border border-white/5">
-            <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Submission ID</p>
-            <p className="text-lg font-mono font-bold accent-text">{submissionId}</p>
-          </div>
+          {!isQueued && (
+            <div className="bg-zinc-900/60 rounded-xl p-4 mb-6 border border-white/5">
+              <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Submission ID</p>
+              <p className="text-lg font-mono font-bold accent-text">{submissionId}</p>
+            </div>
+          )}
+          {isQueued && (
+            <div className="bg-amber-500/10 rounded-xl p-4 mb-6 border border-amber-500/20">
+              <p className="text-xs text-amber-400 font-medium">📶 {queuedCount} submission{queuedCount !== 1 ? 's' : ''} queued — will sync when online</p>
+            </div>
+          )}
           <button onClick={resetForm} className="btn-primary px-6 py-3 rounded-xl">Submit Another Release</button>
-          <a href="#status" className="block text-sm text-zinc-500 hover:text-zinc-300 mt-3 transition-colors">Track your release status →</a>
+          {!isQueued && <a href="#status" className="block text-sm text-zinc-500 hover:text-zinc-300 mt-3 transition-colors">Track your release status →</a>}
         </div>
       </div>
     );
@@ -323,8 +375,15 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
 
   return (
     <div className="min-h-screen">
+      {/* Offline banner */}
+      {isOffline && (
+        <div className="fixed top-0 left-0 right-0 z-[100] bg-amber-500/90 backdrop-blur text-black text-center text-xs font-semibold py-2 px-4">
+          📶 You're offline — your submission will be saved locally and sent when you reconnect
+          {queuedCount > 0 && ` · ${queuedCount} queued`}
+        </div>
+      )}
       {/* Header */}
-      <header className="border-b border-white/5 bg-black/40 backdrop-blur-xl sticky top-0 z-50">
+      <header className={`border-b border-white/5 bg-black/40 backdrop-blur-xl sticky z-50 ${isOffline ? 'top-8' : 'top-0'}`}>
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center gap-3">
           {settings.companyLogo && (
             <img src={settings.companyLogo} alt={settings.companyName} className="h-10 w-10 object-contain rounded-xl" />
