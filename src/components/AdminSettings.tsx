@@ -820,15 +820,29 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
                   style={{ accentColor: 'var(--accent)' }}
                 />
                 <div className="w-24 text-center bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg font-mono text-sm font-bold accent-text">
-                  {(settings.pendingReminderDays ?? 2) === 0
-                    ? 'Off'
-                    : `${settings.pendingReminderDays}d`}
+                  {(settings.pendingReminderDays ?? 2) === 0 ? 'Off' : `${settings.pendingReminderDays}d`}
                 </div>
               </div>
               <p className="text-xs text-zinc-600 mt-1.5">
-                {(settings.pendingReminderDays ?? 2) === 0
-                  ? 'Pending reminders are disabled'
-                  : `You'll be reminded about releases pending for more than ${settings.pendingReminderDays} day${settings.pendingReminderDays !== 1 ? 's' : ''}`}
+                {(settings.pendingReminderDays ?? 2) === 0 ? 'Pending reminders are disabled' : `Remind when pending for more than ${settings.pendingReminderDays} day${settings.pendingReminderDays !== 1 ? 's' : ''}`}
+              </p>
+            </Field>
+
+            <Field label="Upcoming Release Reminder" hint="Warn you when an approved/scheduled release date is approaching (0 = off)">
+              <div className="flex items-center gap-4 mt-1">
+                <input
+                  type="range" min={0} max={30} step={1}
+                  value={settings.releaseReminderDays ?? 7}
+                  onChange={e => set('releaseReminderDays', Number(e.target.value))}
+                  className="flex-1 h-2"
+                  style={{ accentColor: 'var(--accent)' }}
+                />
+                <div className="w-24 text-center bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg font-mono text-sm font-bold accent-text">
+                  {(settings.releaseReminderDays ?? 7) === 0 ? 'Off' : `${settings.releaseReminderDays}d`}
+                </div>
+              </div>
+              <p className="text-xs text-zinc-600 mt-1.5">
+                {(settings.releaseReminderDays ?? 7) === 0 ? 'Upcoming release reminders are disabled' : `Highlight releases dropping within ${settings.releaseReminderDays} day${settings.releaseReminderDays !== 1 ? 's' : ''}`}
               </p>
             </Field>
             <Field label="Submission Cooldown" hint="Prevent the same artist name from submitting more than once within this window (0 = no limit)">
@@ -858,6 +872,12 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               desc='Displays a checklist reminder (3000×3000px, JPG, "Anyone can view") before the cover art upload field'
               value={settings.requireCoverArtSpecs ?? false}
               onChange={v => set('requireCoverArtSpecs', v)}
+            />
+            <ToggleRow
+              label="Internal Comments Panel"
+              desc="Show a floating chat button on release pages so your team can leave internal notes and @mentions"
+              value={settings.internalCommentsEnabled ?? true}
+              onChange={v => set('internalCommentsEnabled', v)}
             />
           </Section>
 

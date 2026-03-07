@@ -11,6 +11,8 @@ import InternalComments from './InternalComments';
 interface Props {
   release: ReleaseSubmission;
   onBack: () => void;
+  commentsEnabled?: boolean;
+  statusLabels?: { pending: string; approved: string; scheduled: string; released: string; rejected: string };
 }
 
 const emptyTrack = (): Track => ({
@@ -57,7 +59,34 @@ function formatDisplayTitle(
   return `${releaseTitle}${featSuffix}`;
 }
 
-export default function ReleaseDetail({ release: initialRelease, onBack }: Props) {
+function CommentsPopover({ releaseId }: { releaseId: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {/* Floating button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="fixed bottom-24 right-6 z-50 w-12 h-12 rounded-full bg-violet-600 hover:bg-violet-500 shadow-xl shadow-violet-900/40 flex items-center justify-center transition-all lg:bottom-8"
+        title="Internal Comments"
+      >
+        <MessageSquare className="w-5 h-5 text-white" />
+      </button>
+
+      {/* Popover panel */}
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="fixed bottom-40 right-6 z-50 w-96 max-w-[calc(100vw-24px)] rounded-2xl border border-white/10 bg-zinc-950 shadow-2xl shadow-black/60 overflow-hidden flex flex-col lg:bottom-24" style={{ height: '500px' }}>
+            <InternalComments releaseId={releaseId} />
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+export default function ReleaseDetail({ release: initialRelease, onBack, commentsEnabled = true, statusLabels }: Props) {
+  const SL = statusLabels ?? { pending: 'Pending', approved: 'Approved', scheduled: 'Scheduled', released: 'Released', rejected: 'Rejected' };
   const { role, can } = usePermissions();
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -178,9 +207,8 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
   const limits = RELEASE_TYPE_LIMITS[releaseType];
 
   return (
-    <div className="flex gap-6 items-start">
-      {/* Main content */}
-      <div className="flex-1 min-w-0 space-y-6 fade-in">
+    <div className="space-y-6 fade-in">
+      {/* Header */}
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <button onClick={onBack} className="flex items-center gap-2 text-zinc-400 hover:text-white transition-all">
@@ -501,7 +529,6 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                           </div>
                           {track.explicit && <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 text-[10px] rounded font-bold">E</span>}
                         </div>
-                        <span className="text-xs text-zinc-500">{track.previewStart} – {track.previewEnd}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs text-zinc-500 mt-2">
                         {track.producedBy && <span>Produced: {track.producedBy}</span>}
@@ -589,11 +616,11 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                     onChange={e => setStatus(e.target.value as ReleaseStatus)}
                     className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
                   >
-                    <option value="pending">⏳ Pending</option>
-                    <option value="approved">✅ Approved</option>
-                    <option value="scheduled">📅 Scheduled</option>
-                    <option value="released">🎵 Released</option>
-                    <option value="rejected">❌ Rejected</option>
+                    <option value="pending">⏳ {SL.pending}</option>
+                    <option value="approved">✅ {SL.approved}</option>
+                    <option value="scheduled">📅 {SL.scheduled}</option>
+                    <option value="released">🎵 {SL.released}</option>
+                    <option value="rejected">❌ {SL.rejected}</option>
                   </select>
                 ) : (
                   <div className="input-dark w-full px-3 py-2.5 rounded-lg text-sm text-zinc-400 capitalize">{status}</div>
@@ -724,12 +751,11 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
           </div>
         </div>
       </div>
-      </div>{/* end main content */}
 
-      {/* Comments panel — sticky sidebar */}
-      <div className="w-80 flex-shrink-0 sticky top-6 hidden xl:flex flex-col rounded-2xl border border-white/8 bg-black/30 backdrop-blur-xl overflow-hidden" style={{ height: 'calc(100vh - 120px)' }}>
-        <InternalComments releaseId={initialRelease.id} />
-      </div>
+      {/* Comments — floating popover button (owner-controlled toggle) */}
+      {commentsEnabled && (
+        <CommentsPopover releaseId={initialRelease.id} />
+      )}
 
     </div>
   );

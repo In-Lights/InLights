@@ -141,6 +141,8 @@ export interface AdminSettings {
   requireCoverArtSpecs: boolean;      // Show cover art specs checklist before upload
   autoApproveAfterDays: number;       // 0 = never auto-approve
   pendingReminderDays: number;        // 0 = never remind
+  internalCommentsEnabled: boolean;   // show/hide comments panel
+  releaseReminderDays: number;        // warn when scheduled release is within X days
   formAccentButtonLabel: string;      // Custom label for next/continue buttons
 
   // Google Drive Picker
@@ -201,6 +203,8 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   requireCoverArtSpecs: false,
   autoApproveAfterDays: 0,
   pendingReminderDays: 2,
+  internalCommentsEnabled: true,
+  releaseReminderDays: 7,
   formAccentButtonLabel: 'Continue',
   drivePickerEnabled: false,
   googleApiClientId: '',

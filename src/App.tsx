@@ -217,12 +217,28 @@ function App() {
               refreshKey={refreshKey}
               onRefresh={() => setRefreshKey(k => k + 1)}
               pendingReminderDays={adminSettings.pendingReminderDays ?? 2}
+              releaseReminderDays={adminSettings.releaseReminderDays ?? 7}
+              statusLabels={{
+                pending: adminSettings.statusLabelPending || 'Pending',
+                approved: adminSettings.statusLabelApproved || 'Approved',
+                scheduled: adminSettings.statusLabelScheduled || 'Scheduled',
+                released: adminSettings.statusLabelReleased || 'Released',
+                rejected: adminSettings.statusLabelRejected || 'Rejected',
+              }}
             />
           )}
           {adminView === 'detail' && selectedRelease && (
             <ReleaseDetail
               release={selectedRelease}
               onBack={() => { setAdminView('dashboard'); setSelectedRelease(null); setRefreshKey(k => k + 1); }}
+              commentsEnabled={adminSettings.internalCommentsEnabled ?? true}
+              statusLabels={{
+                pending: adminSettings.statusLabelPending || 'Pending',
+                approved: adminSettings.statusLabelApproved || 'Approved',
+                scheduled: adminSettings.statusLabelScheduled || 'Scheduled',
+                released: adminSettings.statusLabelReleased || 'Released',
+                rejected: adminSettings.statusLabelRejected || 'Rejected',
+              }}
             />
           )}
           {adminView === 'settings' && can.canAccessSettings && (

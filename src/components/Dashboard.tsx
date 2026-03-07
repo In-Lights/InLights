@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown, ShieldOff, Bell } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus } from '../types';
-import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV, getPendingReminders } from '../store';
+import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV, getPendingReminders, getUpcomingReleaseReminders } from '../store';
 import { ReleaseTypeBadge } from './ui/Badge';
 import ExportPDFButton from './ExportPDF';
 import { usePermissions } from '../utils/permissions';
@@ -11,6 +11,8 @@ interface Props {
   refreshKey: number;
   onRefresh: () => void;
   pendingReminderDays?: number;
+  releaseReminderDays?: number;
+  statusLabels?: { pending: string; approved: string; scheduled: string; released: string; rejected: string };
 }
 
 
@@ -46,7 +48,8 @@ function formatTitle(release: ReleaseSubmission): string {
   return `${release.releaseTitle}${featSuffix}`;
 }
 
-export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendingReminderDays = 2 }: Props) {
+export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendingReminderDays = 2, releaseReminderDays = 7, statusLabels }: Props) {
+  const SL = statusLabels ?? { pending: 'Pending', approved: 'Approved', scheduled: 'Scheduled', released: 'Released', rejected: 'Rejected' };
   const { role, can } = usePermissions();
   const [statusFilter, setStatusFilter] = useState<ReleaseStatus | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -58,6 +61,8 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
   const [bulkLoading, setBulkLoading] = useState(false);
   const [pendingReminders, setPendingReminders] = useState<ReleaseSubmission[]>([]);
   const [dismissedReminders, setDismissedReminders] = useState(false);
+  const [upcomingReminders, setUpcomingReminders] = useState<ReleaseSubmission[]>([]);
+  const [dismissedUpcoming, setDismissedUpcoming] = useState(false);
 
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev);
@@ -100,6 +105,7 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
       .then(setSubmissions)
       .finally(() => setLoading(false));
     if (pendingReminderDays > 0) getPendingReminders(pendingReminderDays).then(setPendingReminders);
+    if (releaseReminderDays > 0) getUpcomingReleaseReminders(releaseReminderDays).then(setUpcomingReminders);
   }, [refreshKey]);
 
   const stats = useMemo(() => {
@@ -160,11 +166,11 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
 
   const statCards = [
     { label: 'Total', value: stats.total, icon: BarChart3, color: 'text-white', bg: 'bg-zinc-800/50' },
-    { label: 'Pending', value: stats.pending, icon: Clock, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-    { label: 'Approved', value: stats.approved, icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-    { label: 'Scheduled', value: stats.scheduled, icon: Calendar, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-    { label: 'Released', value: stats.released, icon: Music2, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-    { label: 'Rejected', value: stats.rejected, icon: XCircle, color: 'text-red-400', bg: 'bg-red-500/10' },
+    { label: SL.pending, value: stats.pending, icon: Clock, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+    { label: SL.approved, value: stats.approved, icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+    { label: SL.scheduled, value: stats.scheduled, icon: Calendar, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+    { label: SL.released, value: stats.released, icon: Music2, color: 'text-purple-400', bg: 'bg-purple-500/10' },
+    { label: SL.rejected, value: stats.rejected, icon: XCircle, color: 'text-red-400', bg: 'bg-red-500/10' },
   ];
 
   return (
@@ -191,7 +197,23 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
         </div>
       )}
 
-      {/* Stats */}
+      {/* Upcoming release reminders banner */}
+      {!dismissedUpcoming && upcomingReminders.length > 0 && (
+        <div className="flex items-start gap-3 px-4 py-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25">
+          <Bell className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-blue-300">
+              🗓 {upcomingReminders.length} release{upcomingReminders.length !== 1 ? 's' : ''} dropping within {releaseReminderDays} days
+            </p>
+            <p className="text-xs text-zinc-500 mt-0.5">
+              {upcomingReminders.map(r => `${r.mainArtist} — ${r.releaseTitle} (${r.releaseDate})`).join(' · ')}
+            </p>
+          </div>
+          <button onClick={() => setDismissedUpcoming(true)} className="text-zinc-600 hover:text-zinc-400 flex-shrink-0">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {statCards.map(s => (
           <div key={s.label} className={`glass-card rounded-xl p-4 ${s.bg}`}>
@@ -225,11 +247,11 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
               className="input-dark pl-10 pr-8 py-2.5 rounded-xl text-sm appearance-none"
             >
               <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="released">Released</option>
-              <option value="rejected">Rejected</option>
+              <option value="pending">{SL.pending}</option>
+              <option value="approved">{SL.approved}</option>
+              <option value="scheduled">{SL.scheduled}</option>
+              <option value="released">{SL.released}</option>
+              <option value="rejected">{SL.rejected}</option>
             </select>
           </div>
           <select
@@ -357,14 +379,14 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
                     disabled={actionLoading === release.id + release.status}
                     className="input-dark px-2 py-1.5 rounded-lg text-xs appearance-none"
                   >
-                    <option value="pending">Pending</option>
-                    <option value="approved">Approved</option>
-                    <option value="scheduled">Scheduled</option>
-                    <option value="released">Released</option>
-                    <option value="rejected">Rejected</option>
+                    <option value="pending">{SL.pending}</option>
+                    <option value="approved">{SL.approved}</option>
+                    <option value="scheduled">{SL.scheduled}</option>
+                    <option value="released">{SL.released}</option>
+                    <option value="rejected">{SL.rejected}</option>
                   </select>
                 ) : (
-                  <span className="px-2 py-1.5 rounded-lg text-xs border border-white/10 text-zinc-400 capitalize">{release.status}</span>
+                  <span className="px-2 py-1.5 rounded-lg text-xs border border-white/10 text-zinc-400 capitalize">{SL[release.status as keyof typeof SL] || release.status}</span>
                 )}
 
                 <button

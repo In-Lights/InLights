@@ -102,6 +102,8 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     requireCoverArtSpecs: data.require_cover_art_specs ?? false,
     autoApproveAfterDays: data.auto_approve_after_days ?? 0,
     pendingReminderDays: data.pending_reminder_days ?? 2,
+    internalCommentsEnabled: data.internal_comments_enabled ?? true,
+    releaseReminderDays: data.release_reminder_days ?? 7,
     formAccentButtonLabel: data.form_accent_button_label ?? 'Continue',
     drivePickerEnabled: data.drive_picker_enabled ?? false,
     googleApiClientId: data.google_api_client_id ?? '',
@@ -127,13 +129,13 @@ export async function getAdminSettings(): Promise<AdminSettings> {
 }
 
 export async function saveAdminSettings(settings: AdminSettings): Promise<void> {
+  // ── CORE: columns that exist from the initial 01_setup.sql ──────────────────
   const { error } = await supabase
     .from('settings')
     .upsert({
       settings_id: 1,
       company_name: settings.companyName,
       admin_username: settings.adminUsername,
-      // adminPasswordHash is saved separately via saveAdminPassword() to allow conditional update
       company_logo: settings.companyLogo,
       accent_color: settings.accentColor,
       form_welcome_text: settings.formWelcomeText,
@@ -160,7 +162,6 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       maintenance_mode_message: settings.maintenanceModeMessage || null,
       require_cover_art_specs: settings.requireCoverArtSpecs ?? false,
       auto_approve_after_days: settings.autoApproveAfterDays ?? 0,
-      pending_reminder_days: settings.pendingReminderDays ?? 2,
       form_accent_button_label: settings.formAccentButtonLabel || 'Continue',
       drive_picker_enabled: settings.drivePickerEnabled ?? false,
       google_api_client_id: settings.googleApiClientId || null,
@@ -177,14 +178,23 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       label_email: settings.labelEmail || null,
       label_instagram: settings.labelInstagram || null,
       label_website: settings.labelWebsite || null,
-      resend_api_key: settings.resendApiKey || null,
-      email_from_name: settings.emailFromName || null,
-      email_from_address: settings.emailFromAddress || null,
-      email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
-      email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
     }, { onConflict: 'settings_id' });
 
   if (error) throw new Error(error.message);
+
+  // ── EXTENDED: columns added via 02_migrations.sql ────────────────────────────
+  // Saved separately and silently — if columns don't exist yet, core save still succeeds.
+  // Run 02_migrations.sql in Supabase to unlock email, reminders, and comments toggle.
+  await supabase.from('settings').update({
+    resend_api_key: settings.resendApiKey || null,
+    email_from_name: settings.emailFromName || null,
+    email_from_address: settings.emailFromAddress || null,
+    email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
+    email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
+    pending_reminder_days: settings.pendingReminderDays ?? 2,
+    internal_comments_enabled: settings.internalCommentsEnabled ?? true,
+    release_reminder_days: settings.releaseReminderDays ?? 7,
+  }).eq('settings_id', 1).then(() => {}); // intentionally silent
 }
 
 // Public branding — anyone can read (RLS: public SELECT on settings)
@@ -700,6 +710,13 @@ async function sendToGoogleSheets(release: ReleaseSubmission): Promise<void> {
   const settings = await getAdminSettings();
   if (!settings.googleSheetsWebhook) return;
   try {
+    // Check for existing row to flag duplicates
+    const existing = await getSubmissions();
+    const isDuplicate = existing.filter(r => r.id !== release.id).some(
+      r => r.mainArtist.toLowerCase() === release.mainArtist.toLowerCase() &&
+           r.releaseTitle.toLowerCase() === release.releaseTitle.toLowerCase()
+    );
+
     await fetch(settings.googleSheetsWebhook, {
       method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
@@ -716,11 +733,13 @@ async function sendToGoogleSheets(release: ReleaseSubmission): Promise<void> {
         trackCount: release.tracks.length,
         collaborations: release.collaborations?.map(c => c.name).join(', ') ?? '',
         features: release.features?.map(f => f.name).join(', ') ?? '',
-        coverArtLink: release.coverArtDriveLink ?? '',
+        coverArtLink: release.coverArtDriveLink ?? release.coverArtImageUrl ?? '',
+        wavLinks: release.tracks.map(t => t.wavDriveLink || '').filter(Boolean).join(', '),
         driveFolderLink: release.driveFolderLink ?? '',
         promoLink: release.promoDriveLink ?? '',
         status: release.status,
         submittedAt: release.createdAt,
+        isDuplicate: isDuplicate ? 'YES ⚠️' : '',
       }),
     });
   } catch {}
@@ -1049,6 +1068,21 @@ export async function getPendingReminders(days = 2): Promise<ReleaseSubmission[]
     .eq('status', 'pending')
     .lt('created_at', cutoff.toISOString())
     .order('created_at', { ascending: true });
+  return (data || []).map(rowToRelease);
+}
+
+export async function getUpcomingReleaseReminders(days = 7): Promise<ReleaseSubmission[]> {
+  if (days === 0) return [];
+  const now = new Date();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() + days);
+  const { data } = await supabase
+    .from('releases')
+    .select('*')
+    .in('status', ['approved', 'scheduled'])
+    .gte('release_date', now.toISOString().split('T')[0])
+    .lte('release_date', cutoff.toISOString().split('T')[0])
+    .order('release_date', { ascending: true });
   return (data || []).map(rowToRelease);
 }
 
