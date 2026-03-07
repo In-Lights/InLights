@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
 import { getAdminSettings, saveAdminSettings, testDiscordWebhook } from '../store';
+import { applyAccentColor } from '../App';
 
 interface Props { onSaved: () => void; }
 
@@ -65,7 +66,8 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
     <button
       type="button"
       onClick={() => onChange(!value)}
-      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${value ? 'bg-violet-600' : 'bg-zinc-700'}`}
+      className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${value ? '' : 'bg-zinc-700'}`}
+      style={value ? { background: 'var(--accent)' } : undefined}
     >
       <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${value ? 'left-6' : 'left-1'}`} />
     </button>
@@ -147,7 +149,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'discord' | 'sheets'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'drive' | 'discord' | 'sheets'>('branding');
 
   const [testingDiscord, setTestingDiscord] = useState(false);
   const [discordResult, setDiscordResult] = useState<'success' | 'fail' | null>(null);
@@ -160,8 +162,10 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
     getAdminSettings().then(s => { setSettings(s); setLoading(false); });
   }, []);
 
-  const set = <K extends keyof AdminSettingsType>(key: K, value: AdminSettingsType[K]) =>
+  const set = <K extends keyof AdminSettingsType>(key: K, value: AdminSettingsType[K]) => {
     setSettings(prev => ({ ...prev, [key]: value }));
+    if (key === 'accentColor' && typeof value === 'string') applyAccentColor(value);
+  };
 
   const handleSave = async () => {
     setSaving(true); setSaveError('');
@@ -217,7 +221,9 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
     { id: 'rules' as const, label: 'Rules', icon: Sliders },
     { id: 'status' as const, label: 'Statuses', icon: Tag },
     { id: 'security' as const, label: 'Security', icon: Lock },
+    { id: 'advanced' as const, label: 'Advanced', icon: Settings },
     { id: 'discord' as const, label: 'Discord', icon: Bell },
+    { id: 'drive' as const, label: 'Drive', icon: ExternalLink },
     { id: 'sheets' as const, label: 'Sheets', icon: Table },
   ];
 
@@ -520,6 +526,206 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               </div>
             </div>
           </Collapsible>
+        </div>
+      )}
+
+      {/* ── ADVANCED ── */}
+      {activeTab === 'advanced' && (
+        <div className="space-y-5">
+          <Section title="Maintenance Mode" desc="Temporarily disable the submission form — useful during label reviews or holidays">
+            <ToggleRow
+              label="Enable Maintenance Mode"
+              desc="Replaces the form with a custom message. No submissions will be accepted."
+              value={settings.maintenanceMode ?? false}
+              onChange={v => set('maintenanceMode', v)}
+            />
+            {settings.maintenanceMode && (
+              <Field label="Maintenance Message" hint="What artists see when submissions are paused">
+                <textarea
+                  value={settings.maintenanceModeMessage}
+                  onChange={e => set('maintenanceModeMessage', e.target.value)}
+                  rows={3}
+                  className="input-dark w-full px-4 py-3 rounded-xl resize-none text-sm"
+                  placeholder="The submission portal is temporarily unavailable..."
+                />
+              </Field>
+            )}
+            {settings.maintenanceMode && (
+              <div className="flex items-center gap-2 text-amber-400 text-sm bg-amber-500/10 border border-amber-500/20 px-3 py-2.5 rounded-xl">
+                🚧 Maintenance mode is ON — artists cannot submit releases right now
+              </div>
+            )}
+          </Section>
+
+          <Section title="Submission Controls" desc="Fine-tune how and when artists can submit">
+            <Field label="Submission Cooldown" hint="Prevent the same artist name from submitting more than once within this window (0 = no limit)">
+              <div className="flex items-center gap-4 mt-1">
+                <input
+                  type="range" min={0} max={168} step={1}
+                  value={settings.submissionCooldownHours ?? 0}
+                  onChange={e => set('submissionCooldownHours', Number(e.target.value))}
+                  className="flex-1 h-2"
+                  style={{ accentColor: 'var(--accent)' }}
+                />
+                <div className="w-24 text-center bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg font-mono text-sm font-bold accent-text">
+                  {(settings.submissionCooldownHours ?? 0) === 0
+                    ? 'No limit'
+                    : `${settings.submissionCooldownHours}h`}
+                </div>
+              </div>
+              <p className="text-xs text-zinc-600 mt-1.5">
+                {(settings.submissionCooldownHours ?? 0) > 0
+                  ? `Artists must wait ${settings.submissionCooldownHours} hour${settings.submissionCooldownHours !== 1 ? 's' : ''} between submissions`
+                  : 'Artists can submit as many times as they want'}
+              </p>
+            </Field>
+
+            <ToggleRow
+              label="Show Cover Art Specs Checklist"
+              desc='Displays a checklist reminder (3000×3000px, JPG, "Anyone can view") before the cover art upload field'
+              value={settings.requireCoverArtSpecs ?? false}
+              onChange={v => set('requireCoverArtSpecs', v)}
+            />
+          </Section>
+
+          <Section title="Form Customization" desc="Tweak copy and behavior of the public submission form">
+            <Field label="Continue Button Label" hint="The text on the Next/Continue buttons throughout the form">
+              <div className="flex items-center gap-3">
+                <input
+                  type="text"
+                  value={settings.formAccentButtonLabel ?? 'Continue'}
+                  onChange={e => set('formAccentButtonLabel', e.target.value)}
+                  placeholder="Continue"
+                  className="input-dark flex-1 px-4 py-3 rounded-xl"
+                  maxLength={20}
+                />
+                <button className="btn-primary px-4 py-3 rounded-xl text-sm whitespace-nowrap" disabled>
+                  {settings.formAccentButtonLabel || 'Continue'} →
+                </button>
+              </div>
+            </Field>
+          </Section>
+
+          <Section title="Auto-Approve" desc="Experimental: automatically move submissions to Approved after N days of no action">
+            <Field label="Auto-Approve After (days)" hint="0 = disabled. If a submission stays Pending for this many days it moves to Approved automatically.">
+              <div className="flex items-center gap-4 mt-1">
+                <input
+                  type="range" min={0} max={30} step={1}
+                  value={settings.autoApproveAfterDays ?? 0}
+                  onChange={e => set('autoApproveAfterDays', Number(e.target.value))}
+                  className="flex-1 h-2"
+                  style={{ accentColor: 'var(--accent)' }}
+                />
+                <div className="w-24 text-center bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg font-mono text-sm font-bold accent-text">
+                  {(settings.autoApproveAfterDays ?? 0) === 0 ? 'Off' : `${settings.autoApproveAfterDays}d`}
+                </div>
+              </div>
+              {(settings.autoApproveAfterDays ?? 0) > 0 && (
+                <p className="text-xs text-amber-400 mt-2 bg-amber-500/10 border border-amber-500/20 px-3 py-2 rounded-lg">
+                  ⚠️ Auto-approve requires a scheduled job (e.g. Supabase Edge Function cron). This setting saves the config but won't act on its own.
+                </p>
+              )}
+            </Field>
+          </Section>
+        </div>
+      )}
+
+      {/* ── DRIVE PICKER ── */}
+      {activeTab === 'drive' && (
+        <div className="space-y-5">
+          <Section title="Google Drive Uploader" desc="Let artists upload files directly from the submission form — no Drive link copying needed">
+            <ToggleRow
+              label="Enable Drive Uploader"
+              desc="When on, artists see an Upload button on cover art, WAV, and lyrics fields. Manual link input still works as fallback."
+              value={settings.drivePickerEnabled ?? false}
+              onChange={v => set('drivePickerEnabled', v)}
+            />
+          </Section>
+
+          {settings.drivePickerEnabled && (
+            <>
+              <Section title="Google Cloud Credentials" desc="Required to open the Drive file picker and accept uploads">
+                <div className="text-xs bg-blue-500/10 border border-blue-500/20 text-blue-300 px-3 py-2.5 rounded-xl leading-relaxed">
+                  ℹ️ You need a Google Cloud project with the <strong>Google Drive API</strong> and <strong>Google Picker API</strong> enabled. Takes about 10 minutes to set up — see the guide below.
+                </div>
+
+                <Field label="OAuth 2.0 Client ID" hint='From Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs. Must be "Web application" type.'>
+                  <input
+                    type="text"
+                    value={settings.googleApiClientId}
+                    onChange={e => set('googleApiClientId', e.target.value)}
+                    placeholder="123456789-xxxxxxxxxxxx.apps.googleusercontent.com"
+                    className="input-dark w-full px-4 py-3 rounded-xl font-mono text-sm"
+                  />
+                </Field>
+
+                <Field label="API Key" hint="Create a restricted API key — enable Google Drive API + Google Picker API. Add HTTP referrer restrictions for security.">
+                  <input
+                    type="password"
+                    value={settings.googleApiKey}
+                    onChange={e => set('googleApiKey', e.target.value)}
+                    placeholder="AIzaSy..."
+                    className="input-dark w-full px-4 py-3 rounded-xl font-mono text-sm"
+                    autoComplete="off"
+                  />
+                </Field>
+              </Section>
+
+              <Section title="Upload Destination" desc="All artist uploads land in this folder — so your label owns and controls the files">
+                <Field label="Upload Folder ID" hint='Go to your Google Drive, open the folder you want to use, copy the ID from the URL: drive.google.com/drive/folders/THIS_IS_THE_ID'>
+                  <input
+                    type="text"
+                    value={settings.driveUploadFolderId}
+                    onChange={e => set('driveUploadFolderId', e.target.value)}
+                    placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs"
+                    className="input-dark w-full px-4 py-3 rounded-xl font-mono text-sm"
+                  />
+                </Field>
+                {settings.driveUploadFolderId && (
+                  <a
+                    href={`https://drive.google.com/drive/folders/${settings.driveUploadFolderId}`}
+                    target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs accent-text hover:underline"
+                  >
+                    <ExternalLink className="w-3 h-3" /> Open upload folder in Drive
+                  </a>
+                )}
+
+                <div className="bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs px-3 py-2.5 rounded-xl space-y-1">
+                  <p className="font-semibold">⚠️ Important — share the folder:</p>
+                  <p>Right-click the folder → Share → change to <strong>"Anyone with the link can edit"</strong>. This is required for artists to be able to upload files into it.</p>
+                </div>
+              </Section>
+
+              <Collapsible title="📋 Setup guide — Google Cloud (10 min)">
+                <div className="space-y-3 text-sm text-zinc-400">
+                  {[
+                    { step: '1. Create a project', body: <>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="accent-text underline">console.cloud.google.com</a> → New Project → give it a name (e.g. "In Lights").</> },
+                    { step: '2. Enable APIs', body: <>Go to <strong className="text-white">APIs & Services → Library</strong>. Search for and enable both: <strong className="text-white">Google Drive API</strong> and <strong className="text-white">Google Picker API</strong>.</> },
+                    { step: '3. Create OAuth Client ID', body: <>Go to <strong className="text-white">APIs & Services → Credentials → Create Credentials → OAuth client ID</strong>. Choose <strong className="text-white">Web application</strong>. Under "Authorized JavaScript origins" add your site URL (e.g. <code className="text-violet-300">https://yourdomain.vercel.app</code>). Copy the Client ID.</> },
+                    { step: '4. Create API Key', body: <>Still in Credentials, click <strong className="text-white">Create Credentials → API Key</strong>. Click Edit on the key → under "API restrictions" select <strong className="text-white">Restrict key</strong> → add Drive API + Picker API. Add your domain to HTTP referrers. Copy the key.</> },
+                    { step: '5. Configure OAuth consent screen', body: <>Go to <strong className="text-white">APIs & Services → OAuth consent screen</strong>. Set app name, support email, and add your domain. Under Scopes add <code className="text-violet-300">../auth/drive.file</code>. Publish the app (or leave as Testing and add test users).</> },
+                    { step: '6. Paste credentials here', body: 'Paste the Client ID and API Key into the fields above, enter your Upload Folder ID, and save.' },
+                  ].map(({ step, body }) => (
+                    <div key={step} className="bg-zinc-900/60 rounded-xl p-4">
+                      <p className="text-white font-semibold mb-1">{step}</p>
+                      <p className="leading-relaxed">{body}</p>
+                    </div>
+                  ))}
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-emerald-400">
+                    ✅ Once configured, artists will see an "Upload" button on each file field. They can also still paste links manually as a fallback.
+                  </div>
+                </div>
+              </Collapsible>
+            </>
+          )}
+
+          {!settings.drivePickerEnabled && (
+            <div className="glass-card rounded-2xl p-8 text-center">
+              <div className="text-4xl mb-3">📁</div>
+              <p className="text-zinc-400 text-sm">Enable the Drive Uploader above to configure Google credentials and give artists a seamless upload experience.</p>
+            </div>
+          )}
         </div>
       )}
 

@@ -27,7 +27,7 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .glow-border {
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  border: 1px solid var(--accent-glow, rgba(139, 92, 246, 0.3));
   box-shadow: 0 0 20px rgba(139, 92, 246, 0.1);
 }
 
@@ -55,8 +55,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 
 .input-dark:focus {
-  border-color: rgba(139, 92, 246, 0.5);
-  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle, rgba(124, 58, 237, 0.12));
   outline: none;
 }
 
@@ -64,17 +64,25 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   color: rgba(255, 255, 255, 0.3);
 }
 
+/* Accent color driven by CSS variable — set dynamically from settings */
+:root {
+  --accent: #7c3aed;
+  --accent-dim: #6d28d9;
+  --accent-glow: rgba(124, 58, 237, 0.3);
+  --accent-subtle: rgba(124, 58, 237, 0.12);
+}
+
 .btn-primary {
-  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  background: var(--accent);
   color: white;
   font-weight: 600;
   transition: all 0.2s;
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, #6d28d9, #4f46e5);
+  background: var(--accent-dim);
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 20px var(--accent-glow);
 }
 
 .btn-primary:disabled {
@@ -83,6 +91,10 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   transform: none;
   box-shadow: none;
 }
+
+.accent-text { color: var(--accent); }
+.accent-border { border-color: var(--accent) !important; }
+.accent-bg-subtle { background: var(--accent-subtle) !important; }
 
 /* Shake animation for errors */
 @keyframes shake {

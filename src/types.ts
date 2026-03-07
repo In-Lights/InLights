@@ -86,6 +86,20 @@ export interface AdminSettings {
   notificationEmail: string;
   discordWebhook: string;
   googleSheetsWebhook: string;
+
+  // Advanced / Creative
+  submissionCooldownHours: number;   // How many hours between submissions per artist name
+  maintenanceMode: boolean;           // Temporarily disable form submissions
+  maintenanceModeMessage: string;     // Message shown when form is in maintenance
+  requireCoverArtSpecs: boolean;      // Show cover art specs checklist before upload
+  autoApproveAfterDays: number;       // 0 = never auto-approve
+  formAccentButtonLabel: string;      // Custom label for next/continue buttons
+
+  // Google Drive Picker
+  drivePickerEnabled: boolean;        // Master toggle for the Drive Picker UI
+  googleApiClientId: string;          // OAuth 2.0 Client ID (from Google Cloud Console)
+  googleApiKey: string;               // Restricted API key (Drive + Picker APIs)
+  driveUploadFolderId: string;        // Folder ID where artist uploads land
 }
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
@@ -113,6 +127,16 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   notificationEmail: '',
   discordWebhook: '',
   googleSheetsWebhook: '',
+  submissionCooldownHours: 0,
+  maintenanceMode: false,
+  maintenanceModeMessage: 'The submission portal is temporarily unavailable. Please check back soon.',
+  requireCoverArtSpecs: false,
+  autoApproveAfterDays: 0,
+  formAccentButtonLabel: 'Continue',
+  drivePickerEnabled: false,
+  googleApiClientId: '',
+  googleApiKey: '',
+  driveUploadFolderId: '',
 };
 
 export const RELEASE_TYPE_LIMITS: Record<ReleaseType, { min: number; max: number; label: string }> = {
@@ -126,3 +150,11 @@ export const GENRES = [
   'Indie', 'Jazz', 'Classical', 'Country', 'Latin', 'Afrobeats', 'Reggaeton',
   'K-Pop', 'Metal', 'Punk', 'Folk', 'Blues', 'Gospel', 'Soundtrack', 'Other'
 ];
+
+
+// ── Drive Picker integration ─────────────────────────────────
+// Added to AdminSettings:
+// googleApiClientId   — OAuth 2.0 Client ID from Google Cloud Console
+// googleApiKey        — Restricted API key (Drive + Picker APIs enabled)
+// driveUploadFolderId — Folder ID where uploaded files land (so the label owns them)
+// drivePickerEnabled  — master toggle; if false, only manual links shown

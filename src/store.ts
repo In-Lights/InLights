@@ -32,7 +32,7 @@ async function generateReleaseId(): Promise<string> {
   const now = new Date();
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
-  const prefix = `IL-${year}-${month}`;
+  const prefix = `${year}-${month}`;
 
   const { data } = await supabase
     .from('releases')
@@ -80,6 +80,16 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     notificationEmail: data.notification_email ?? '',
     discordWebhook: data.discord_webhook ?? '',
     googleSheetsWebhook: data.google_sheets_webhook ?? '',
+    submissionCooldownHours: data.submission_cooldown_hours ?? 0,
+    maintenanceMode: data.maintenance_mode ?? false,
+    maintenanceModeMessage: data.maintenance_mode_message ?? DEFAULT_ADMIN_SETTINGS.maintenanceModeMessage,
+    requireCoverArtSpecs: data.require_cover_art_specs ?? false,
+    autoApproveAfterDays: data.auto_approve_after_days ?? 0,
+    formAccentButtonLabel: data.form_accent_button_label ?? 'Continue',
+    drivePickerEnabled: data.drive_picker_enabled ?? false,
+    googleApiClientId: data.google_api_client_id ?? '',
+    googleApiKey: data.google_api_key ?? '',
+    driveUploadFolderId: data.drive_upload_folder_id ?? '',
   };
 }
 
@@ -111,6 +121,16 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       notification_email: settings.notificationEmail || null,
       discord_webhook: settings.discordWebhook || null,
       google_sheets_webhook: settings.googleSheetsWebhook || null,
+      submission_cooldown_hours: settings.submissionCooldownHours ?? 0,
+      maintenance_mode: settings.maintenanceMode ?? false,
+      maintenance_mode_message: settings.maintenanceModeMessage || null,
+      require_cover_art_specs: settings.requireCoverArtSpecs ?? false,
+      auto_approve_after_days: settings.autoApproveAfterDays ?? 0,
+      form_accent_button_label: settings.formAccentButtonLabel || 'Continue',
+      drive_picker_enabled: settings.drivePickerEnabled ?? false,
+      google_api_client_id: settings.googleApiClientId || null,
+      google_api_key: settings.googleApiKey || null,
+      drive_upload_folder_id: settings.driveUploadFolderId || null,
     })
     .eq('settings_id', 1);
 
@@ -118,15 +138,10 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
 }
 
 // Public branding — anyone can read (RLS: public SELECT on settings)
-export async function fetchPublicBranding(): Promise<{
-  companyName: string;
-  companyLogo: string;
-  formWelcomeText: string;
-  formDescription: string;
-} | null> {
+export async function fetchPublicBranding(): Promise<Partial<AdminSettings> | null> {
   const { data, error } = await supabase
     .from('settings')
-    .select('company_name, company_logo, form_welcome_text, form_description')
+    .select('company_name, company_logo, form_welcome_text, form_description, accent_color, submission_success_message, rights_agreement_text, require_drive_folder, require_promo_materials, require_lyrics, min_release_days_notice, max_tracks_album, allowed_release_types, custom_genres, maintenance_mode, maintenance_mode_message, require_cover_art_specs, submission_cooldown_hours, form_accent_button_label, drive_picker_enabled, google_api_client_id, google_api_key, drive_upload_folder_id')
     .eq('settings_id', 1)
     .single();
 
@@ -137,6 +152,25 @@ export async function fetchPublicBranding(): Promise<{
     companyLogo: data.company_logo ?? DEFAULT_ADMIN_SETTINGS.companyLogo,
     formWelcomeText: data.form_welcome_text ?? DEFAULT_ADMIN_SETTINGS.formWelcomeText,
     formDescription: data.form_description ?? DEFAULT_ADMIN_SETTINGS.formDescription,
+    accentColor: data.accent_color ?? DEFAULT_ADMIN_SETTINGS.accentColor,
+    submissionSuccessMessage: data.submission_success_message ?? DEFAULT_ADMIN_SETTINGS.submissionSuccessMessage,
+    rightsAgreementText: data.rights_agreement_text ?? DEFAULT_ADMIN_SETTINGS.rightsAgreementText,
+    requireDriveFolder: data.require_drive_folder ?? false,
+    requirePromoMaterials: data.require_promo_materials ?? false,
+    requireLyrics: data.require_lyrics ?? false,
+    minReleaseDaysNotice: data.min_release_days_notice ?? 7,
+    maxTracksAlbum: data.max_tracks_album ?? 32,
+    allowedReleaseTypes: data.allowed_release_types ?? 'single,ep,album',
+    customGenres: data.custom_genres ?? '',
+    maintenanceMode: data.maintenance_mode ?? false,
+    maintenanceModeMessage: data.maintenance_mode_message ?? DEFAULT_ADMIN_SETTINGS.maintenanceModeMessage,
+    requireCoverArtSpecs: data.require_cover_art_specs ?? false,
+    submissionCooldownHours: data.submission_cooldown_hours ?? 0,
+    formAccentButtonLabel: data.form_accent_button_label ?? 'Continue',
+    drivePickerEnabled: data.drive_picker_enabled ?? false,
+    googleApiClientId: data.google_api_client_id ?? '',
+    googleApiKey: data.google_api_key ?? '',
+    driveUploadFolderId: data.drive_upload_folder_id ?? '',
   };
 }
 
