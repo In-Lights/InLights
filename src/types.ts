@@ -41,6 +41,7 @@ export interface ReleaseSubmission {
   explicitContent: boolean;
   genre: string;
   coverArtDriveLink: string;
+  coverArtImageUrl: string;   // Direct image URL for thumbnail preview (optional)
   tracks: Track[];
   promoDriveLink?: string;
   driveFolderLink?: string;
@@ -54,9 +55,9 @@ export interface AdminSettings {
   companyLogo: string;
   accentColor: string;
 
-  // Auth
+  // Auth — username stored plaintext, password stored as SHA-256 hash
   adminUsername: string;
-  adminPassword: string;
+  adminPasswordHash: string; // SHA-256 hex — never the real password
 
   // Form — text
   formWelcomeText: string;
@@ -100,6 +101,20 @@ export interface AdminSettings {
   googleApiClientId: string;          // OAuth 2.0 Client ID (from Google Cloud Console)
   googleApiKey: string;               // Restricted API key (Drive + Picker APIs)
   driveUploadFolderId: string;        // Folder ID where artist uploads land
+
+  // Submission behavior
+  allowCoverArtImageUrl: boolean;     // Let artists paste a direct image URL for preview
+  showArtworkPreview: boolean;        // Show live image preview in form
+  requireMixMaster: boolean;          // Require mixed/mastered credits per track
+  requireTikTokTimestamp: boolean;    // Require TikTok preview timestamps
+  maxCollaborators: number;           // Max collaborators allowed (0 = unlimited)
+  maxFeatures: number;                // Max featured artists (0 = unlimited)
+  formFooterText: string;             // Small footer shown at bottom of form
+
+  // Label contact info shown on form
+  labelEmail: string;
+  labelInstagram: string;
+  labelWebsite: string;
 }
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
@@ -107,7 +122,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   companyLogo: 'https://i.ibb.co/1fPkzkSD/IMG-1647-1.png',
   accentColor: '#7c3aed',
   adminUsername: 'admin',
-  adminPassword: 'inlights2025',
+  adminPasswordHash: '', // empty = first-run, login will prompt to set password
   formWelcomeText: 'Submit Your Release',
   formDescription: 'Fill out the form below to submit your music release to In Lights.',
   submissionSuccessMessage: 'Your submission has been received and is under review.',
@@ -137,6 +152,16 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   googleApiClientId: '',
   googleApiKey: '',
   driveUploadFolderId: '',
+  allowCoverArtImageUrl: true,
+  showArtworkPreview: true,
+  requireMixMaster: false,
+  requireTikTokTimestamp: false,
+  maxCollaborators: 0,
+  maxFeatures: 0,
+  formFooterText: '',
+  labelEmail: '',
+  labelInstagram: '',
+  labelWebsite: '',
 };
 
 export const RELEASE_TYPE_LIMITS: Record<ReleaseType, { min: number; max: number; label: string }> = {

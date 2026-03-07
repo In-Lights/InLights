@@ -54,6 +54,16 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 
+select.input-dark {
+  background: #1d1d1f;
+  color: #fafafa;
+}
+
+select.input-dark option {
+  background: #1d1d1f;
+  color: #fafafa;
+}
+
 .input-dark:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-subtle, rgba(124, 58, 237, 0.12));

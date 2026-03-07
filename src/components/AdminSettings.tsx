@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import {
   Save, Settings, FileText, Bell, Lock, Table, Send,
   CheckCircle2, XCircle, Loader2, Palette, ExternalLink,
-  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders
+  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
-import { getAdminSettings, saveAdminSettings, testDiscordWebhook } from '../store';
+import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook } from '../store';
 import { applyAccentColor } from '../App';
 
 interface Props { onSaved: () => void; }
@@ -157,6 +157,11 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
   const [testingSheets, setTestingSheets] = useState(false);
   const [sheetsResult, setSheetsResult] = useState<'success' | 'fail' | null>(null);
   const [copiedAdminUrl, setCopiedAdminUrl] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordResult, setPasswordResult] = useState<'success' | 'error' | null>(null);
+  const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => {
     getAdminSettings().then(s => { setSettings(s); setLoading(false); });
@@ -223,7 +228,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
     { id: 'security' as const, label: 'Security', icon: Lock },
     { id: 'advanced' as const, label: 'Advanced', icon: Settings },
     { id: 'discord' as const, label: 'Discord', icon: Bell },
-    { id: 'drive' as const, label: 'Drive', icon: ExternalLink },
+    { id: 'drive' as const, label: 'Drive', icon: FolderOpen },
     { id: 'sheets' as const, label: 'Sheets', icon: Table },
   ];
 
@@ -455,16 +460,87 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       {/* ── SECURITY ── */}
       {activeTab === 'security' && (
         <div className="space-y-5">
-          <Section title="Admin Credentials">
-            <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-2.5 rounded-lg">
-              ⚠️ After changing credentials, you'll need to log in again with the new ones.
+          <Section title="Admin Credentials" desc="Your password is stored as a one-way hash — the real password is never saved anywhere">
+
+            <div className="bg-zinc-900/60 border border-white/5 rounded-xl px-4 py-2.5 flex items-center gap-2 text-xs text-zinc-500">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+              Password is hashed before saving — even if someone reads the database, they cannot recover it
             </div>
+
             <Field label="Username">
-              <input type="text" value={settings.adminUsername} onChange={e => set('adminUsername', e.target.value)} className="input-dark w-full px-4 py-3 rounded-xl" autoComplete="off" />
+              <input
+                type="text"
+                value={settings.adminUsername}
+                onChange={e => set('adminUsername', e.target.value)}
+                className="input-dark w-full px-4 py-3 rounded-xl"
+                autoComplete="off"
+              />
             </Field>
-            <Field label="Password">
-              <input type="password" value={settings.adminPassword} onChange={e => set('adminPassword', e.target.value)} className="input-dark w-full px-4 py-3 rounded-xl" autoComplete="new-password" />
+
+            <Field label="New Password" hint="Leave blank to keep your current password unchanged">
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => { setNewPassword(e.target.value); setPasswordResult(null); }}
+                placeholder="Enter new password"
+                className="input-dark w-full px-4 py-3 rounded-xl"
+                autoComplete="new-password"
+              />
             </Field>
+
+            {newPassword && (
+              <Field label="Confirm New Password">
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => { setConfirmPassword(e.target.value); setPasswordResult(null); }}
+                  placeholder="Re-enter new password"
+                  className={`input-dark w-full px-4 py-3 rounded-xl ${confirmPassword && confirmPassword !== newPassword ? 'border-red-500/50' : ''}`}
+                  autoComplete="new-password"
+                />
+                {confirmPassword && confirmPassword !== newPassword && (
+                  <p className="text-xs text-red-400 mt-1.5">Passwords don't match</p>
+                )}
+              </Field>
+            )}
+
+            {newPassword && confirmPassword && newPassword === confirmPassword && (
+              <button
+                onClick={async () => {
+                  setPasswordSaving(true);
+                  setPasswordResult(null);
+                  setPasswordError('');
+                  try {
+                    await saveAdminPassword(newPassword);
+                    setPasswordResult('success');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                  } catch (e) {
+                    setPasswordResult('error');
+                    setPasswordError(e instanceof Error ? e.message : 'Failed to save password');
+                  } finally {
+                    setPasswordSaving(false);
+                  }
+                }}
+                disabled={passwordSaving}
+                className="btn-primary px-5 py-2.5 rounded-xl text-sm flex items-center gap-2"
+              >
+                {passwordSaving
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving…</>
+                  : <><CheckCircle2 className="w-4 h-4" /> Update Password</>}
+              </button>
+            )}
+
+            {passwordResult === 'success' && (
+              <div className="flex items-center gap-2 text-emerald-400 text-sm bg-emerald-500/10 border border-emerald-500/20 px-3 py-2.5 rounded-xl">
+                <CheckCircle2 className="w-4 h-4" /> Password updated successfully
+              </div>
+            )}
+            {passwordResult === 'error' && (
+              <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 px-3 py-2.5 rounded-xl">
+                <XCircle className="w-4 h-4" /> {passwordError}
+              </div>
+            )}
           </Section>
 
           <Section title="Admin URL" desc="Share only with your team — this is the link to the admin panel">
@@ -625,6 +701,82 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
                   ⚠️ Auto-approve requires a scheduled job (e.g. Supabase Edge Function cron). This setting saves the config but won't act on its own.
                 </p>
               )}
+            </Field>
+          </Section>
+
+          <Section title="Submission Limits" desc="Control how many collaborators and features artists can add">
+            <Field label="Max Collaborators" hint="0 = unlimited">
+              <div className="flex items-center gap-4">
+                <input type="range" min={0} max={10} step={1}
+                  value={settings.maxCollaborators ?? 0}
+                  onChange={e => set('maxCollaborators', Number(e.target.value))}
+                  className="flex-1 h-2" style={{ accentColor: 'var(--accent)' }} />
+                <div className="w-20 text-center bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg font-mono text-sm font-bold accent-text">
+                  {(settings.maxCollaborators ?? 0) === 0 ? 'Unlimited' : settings.maxCollaborators}
+                </div>
+              </div>
+            </Field>
+            <Field label="Max Featured Artists" hint="0 = unlimited">
+              <div className="flex items-center gap-4">
+                <input type="range" min={0} max={10} step={1}
+                  value={settings.maxFeatures ?? 0}
+                  onChange={e => set('maxFeatures', Number(e.target.value))}
+                  className="flex-1 h-2" style={{ accentColor: 'var(--accent)' }} />
+                <div className="w-20 text-center bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-lg font-mono text-sm font-bold accent-text">
+                  {(settings.maxFeatures ?? 0) === 0 ? 'Unlimited' : settings.maxFeatures}
+                </div>
+              </div>
+            </Field>
+          </Section>
+
+          <Section title="Track Credits" desc="Control which credits are shown and required">
+            <ToggleRow
+              label="Require Mix & Master Credits"
+              desc="Artists must fill in 'Mixed by' and 'Mastered by' for every track before submitting"
+              value={settings.requireMixMaster ?? false}
+              onChange={v => set('requireMixMaster', v)}
+            />
+            <ToggleRow
+              label="Require Preview Timestamps"
+              desc="Artists must enter TikTok/preview start and end times per track"
+              value={settings.requireTikTokTimestamp ?? false}
+              onChange={v => set('requireTikTokTimestamp', v)}
+            />
+          </Section>
+
+          <Section title="Cover Art" desc="Control the artwork fields on the form">
+            <ToggleRow
+              label="Allow Direct Image URL"
+              desc='Artists can paste a direct image URL (e.g. imgbb) — shown as a thumbnail preview in the form and admin panel'
+              value={settings.allowCoverArtImageUrl ?? true}
+              onChange={v => set('allowCoverArtImageUrl', v)}
+            />
+          </Section>
+
+          <Section title="Label Contact Info" desc="Shown in the form footer so artists can reach you">
+            <Field label="Contact Email">
+              <input type="email" value={settings.labelEmail ?? ''}
+                onChange={e => set('labelEmail', e.target.value)}
+                placeholder="releases@yourlabel.com" className="input-dark w-full px-4 py-3 rounded-xl" />
+            </Field>
+            <Field label="Instagram Handle" hint="Without the @ symbol">
+              <input type="text" value={settings.labelInstagram ?? ''}
+                onChange={e => set('labelInstagram', e.target.value)}
+                placeholder="yourlabel" className="input-dark w-full px-4 py-3 rounded-xl" />
+            </Field>
+            <Field label="Website URL">
+              <input type="url" value={settings.labelWebsite ?? ''}
+                onChange={e => set('labelWebsite', e.target.value)}
+                placeholder="https://yourlabel.com" className="input-dark w-full px-4 py-3 rounded-xl" />
+            </Field>
+          </Section>
+
+          <Section title="Form Footer" desc="Small text shown at the very bottom of the submission form">
+            <Field label="Footer Text">
+              <input type="text" value={settings.formFooterText ?? ''}
+                onChange={e => set('formFooterText', e.target.value)}
+                placeholder="© 2026 In Lights. All submissions are confidential."
+                className="input-dark w-full px-4 py-3 rounded-xl" />
             </Field>
           </Section>
         </div>

@@ -5,6 +5,12 @@ import { ReleaseSubmission, AdminSettings, DEFAULT_ADMIN_SETTINGS } from './type
 // Supabase Client
 // ============================================================
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+
+// ── Password hashing (Web Crypto — no deps, runs in browser) ──
+export async function hashPassword(plain: string): Promise<string> {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(plain));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
 if (!supabaseUrl || !supabaseAnonKey) {
@@ -60,7 +66,7 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     companyLogo: data.company_logo ?? DEFAULT_ADMIN_SETTINGS.companyLogo,
     accentColor: data.accent_color ?? DEFAULT_ADMIN_SETTINGS.accentColor,
     adminUsername: data.admin_username ?? DEFAULT_ADMIN_SETTINGS.adminUsername,
-    adminPassword: data.admin_password ?? DEFAULT_ADMIN_SETTINGS.adminPassword,
+    adminPasswordHash: data.admin_password_hash ?? DEFAULT_ADMIN_SETTINGS.adminPasswordHash,
     formWelcomeText: data.form_welcome_text ?? DEFAULT_ADMIN_SETTINGS.formWelcomeText,
     formDescription: data.form_description ?? DEFAULT_ADMIN_SETTINGS.formDescription,
     submissionSuccessMessage: data.submission_success_message ?? DEFAULT_ADMIN_SETTINGS.submissionSuccessMessage,
@@ -90,6 +96,16 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     googleApiClientId: data.google_api_client_id ?? '',
     googleApiKey: data.google_api_key ?? '',
     driveUploadFolderId: data.drive_upload_folder_id ?? '',
+    allowCoverArtImageUrl: data.allow_cover_art_image_url ?? true,
+    showArtworkPreview: data.show_artwork_preview ?? true,
+    requireMixMaster: data.require_mix_master ?? false,
+    requireTikTokTimestamp: data.require_tiktok_timestamp ?? false,
+    maxCollaborators: data.max_collaborators ?? 0,
+    maxFeatures: data.max_features ?? 0,
+    formFooterText: data.form_footer_text ?? '',
+    labelEmail: data.label_email ?? '',
+    labelInstagram: data.label_instagram ?? '',
+    labelWebsite: data.label_website ?? '',
   };
 }
 
@@ -98,10 +114,10 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
     .from('settings')
     .update({
       company_name: settings.companyName,
+      admin_username: settings.adminUsername,
+      // adminPasswordHash is saved separately via saveAdminPassword() to allow conditional update
       company_logo: settings.companyLogo,
       accent_color: settings.accentColor,
-      admin_username: settings.adminUsername,
-      admin_password: settings.adminPassword,
       form_welcome_text: settings.formWelcomeText,
       form_description: settings.formDescription,
       submission_success_message: settings.submissionSuccessMessage,
@@ -131,6 +147,16 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       google_api_client_id: settings.googleApiClientId || null,
       google_api_key: settings.googleApiKey || null,
       drive_upload_folder_id: settings.driveUploadFolderId || null,
+      allow_cover_art_image_url: settings.allowCoverArtImageUrl ?? true,
+      show_artwork_preview: settings.showArtworkPreview ?? true,
+      require_mix_master: settings.requireMixMaster ?? false,
+      require_tiktok_timestamp: settings.requireTikTokTimestamp ?? false,
+      max_collaborators: settings.maxCollaborators ?? 0,
+      max_features: settings.maxFeatures ?? 0,
+      form_footer_text: settings.formFooterText || null,
+      label_email: settings.labelEmail || null,
+      label_instagram: settings.labelInstagram || null,
+      label_website: settings.labelWebsite || null,
     })
     .eq('settings_id', 1);
 
@@ -141,7 +167,7 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
 export async function fetchPublicBranding(): Promise<Partial<AdminSettings> | null> {
   const { data, error } = await supabase
     .from('settings')
-    .select('company_name, company_logo, form_welcome_text, form_description, accent_color, submission_success_message, rights_agreement_text, require_drive_folder, require_promo_materials, require_lyrics, min_release_days_notice, max_tracks_album, allowed_release_types, custom_genres, maintenance_mode, maintenance_mode_message, require_cover_art_specs, submission_cooldown_hours, form_accent_button_label, drive_picker_enabled, google_api_client_id, google_api_key, drive_upload_folder_id')
+    .select('company_name, company_logo, form_welcome_text, form_description, accent_color, submission_success_message, rights_agreement_text, require_drive_folder, require_promo_materials, require_lyrics, min_release_days_notice, max_tracks_album, allowed_release_types, custom_genres, maintenance_mode, maintenance_mode_message, require_cover_art_specs, submission_cooldown_hours, form_accent_button_label, drive_picker_enabled, google_api_client_id, google_api_key, drive_upload_folder_id, allow_cover_art_image_url, show_artwork_preview, require_mix_master, require_tiktok_timestamp, max_collaborators, max_features, form_footer_text, label_email, label_instagram, label_website')
     .eq('settings_id', 1)
     .single();
 
@@ -171,6 +197,16 @@ export async function fetchPublicBranding(): Promise<Partial<AdminSettings> | nu
     googleApiClientId: data.google_api_client_id ?? '',
     googleApiKey: data.google_api_key ?? '',
     driveUploadFolderId: data.drive_upload_folder_id ?? '',
+    allowCoverArtImageUrl: data.allow_cover_art_image_url ?? true,
+    showArtworkPreview: data.show_artwork_preview ?? true,
+    requireMixMaster: data.require_mix_master ?? false,
+    requireTikTokTimestamp: data.require_tiktok_timestamp ?? false,
+    maxCollaborators: data.max_collaborators ?? 0,
+    maxFeatures: data.max_features ?? 0,
+    formFooterText: data.form_footer_text ?? '',
+    labelEmail: data.label_email ?? '',
+    labelInstagram: data.label_instagram ?? '',
+    labelWebsite: data.label_website ?? '',
   };
 }
 
@@ -210,6 +246,7 @@ function rowToRelease(row: Record<string, unknown>): ReleaseSubmission {
     explicitContent: row.explicit_content as boolean,
     genre: row.genre as string,
     coverArtDriveLink: row.cover_art_drive_link as string,
+    coverArtImageUrl: (row.cover_art_image_url as string) ?? '',
     tracks: (row.tracks as ReleaseSubmission['tracks']) ?? [],
     promoDriveLink: (row.promo_drive_link as string) ?? undefined,
     driveFolderLink: (row.drive_folder_link as string) ?? undefined,
@@ -231,6 +268,7 @@ function releaseToRow(release: Partial<ReleaseSubmission> & { id?: string }) {
   if (release.explicitContent !== undefined) row.explicit_content = release.explicitContent;
   if (release.genre !== undefined) row.genre = release.genre;
   if (release.coverArtDriveLink !== undefined) row.cover_art_drive_link = release.coverArtDriveLink;
+  if (release.coverArtImageUrl !== undefined) row.cover_art_image_url = release.coverArtImageUrl;
   if (release.tracks !== undefined) row.tracks = release.tracks;
   if (release.promoDriveLink !== undefined) row.promo_drive_link = release.promoDriveLink;
   if (release.driveFolderLink !== undefined) row.drive_folder_link = release.driveFolderLink;
@@ -311,7 +349,21 @@ let _adminSession: { loggedIn: boolean; expiry: number } = { loggedIn: false, ex
 
 export async function loginAdmin(username: string, password: string): Promise<boolean> {
   const settings = await getAdminSettings();
-  return username === settings.adminUsername && password === settings.adminPassword;
+  if (username !== settings.adminUsername) return false;
+  // If no hash set yet (first run), accept any password and save the hash
+  if (!settings.adminPasswordHash) return true;
+  const inputHash = await hashPassword(password);
+  return inputHash === settings.adminPasswordHash;
+}
+
+// Save only the password hash — called separately so saveAdminSettings doesn't need the raw password
+export async function saveAdminPassword(newPassword: string): Promise<void> {
+  const hash = await hashPassword(newPassword);
+  const { error } = await supabase
+    .from('settings')
+    .update({ admin_password_hash: hash })
+    .eq('settings_id', 1);
+  if (error) throw new Error(error.message);
 }
 
 export function setAdminSession(loggedIn: boolean): void {

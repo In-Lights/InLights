@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import {
   Music, User, Disc3, Upload, ChevronRight, ChevronLeft,
-  Plus, Trash2, CheckCircle2, ExternalLink, AlertCircle, Calendar, Clock
+  Plus, Trash2, CheckCircle2, AlertCircle, Calendar, Clock,
+  Image, Globe, Instagram, Mail
 } from 'lucide-react';
 import {
   Track, Collaborator, ReleaseType, RELEASE_TYPE_LIMITS, GENRES,
@@ -11,24 +12,43 @@ import { addSubmission } from '../store';
 import DrivePickerButton from './DrivePickerButton';
 
 // ── date utils ───────────────────────────────────────────────
-function getMinDate(daysAhead: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + daysAhead);
+function getMinDate(n: number) {
+  const d = new Date(); d.setDate(d.getDate() + n);
   return d.toISOString().split('T')[0];
 }
-
-function daysUntil(dateStr: string): number {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const target = new Date(dateStr + 'T00:00:00');
-  return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+function daysUntil(s: string) {
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.round((new Date(s+'T00:00:00').getTime() - t.getTime()) / 86400000);
+}
+function fmtDate(s: string) {
+  if (!s) return '';
+  const [y,m,d] = s.split('-');
+  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mo[+m-1]} ${+d}, ${y}`;
 }
 
-function formatDate(dateStr: string): string {
-  if (!dateStr) return '';
-  const [y, m, d] = dateStr.split('-');
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${months[parseInt(m) - 1]} ${parseInt(d)}, ${y}`;
+// ── build Spotify-style track display name ───────────────────
+function buildTrackDisplay(title: string, features: Collaborator[]): string {
+  if (!title.trim()) return '';
+  const feats = features.map(f => f.name.trim()).filter(Boolean);
+  if (!feats.length) return title;
+  return `${title} (feat. ${feats.join(', ')})`;
+}
+
+// ── build artist line like Spotify ───────────────────────────
+function buildArtistLine(main: string, collabs: Collaborator[]): string {
+  const all = [main, ...collabs.map(c => c.name.trim()).filter(Boolean)];
+  return all.join(', ');
+}
+
+// ── build folder key and name for Drive ──────────────────────
+function buildReleaseFolderName(artist: string, title: string): string {
+  const year = new Date().getFullYear();
+  const safe = (s: string) => s.replace(/[^a-zA-Z0-9\s\-_]/g, '').trim().slice(0, 40);
+  return `${safe(artist)} — ${safe(title)} (${year})`;
+}
+function buildReleaseKey(artist: string, title: string): string {
+  return `${artist}__${title}`.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '').slice(0, 60);
 }
 
 // ── defaults ─────────────────────────────────────────────────
@@ -58,9 +78,9 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
     return [...GENRES, ...extras];
   }, [settings.customGenres]);
 
-  const getLimits = (type: ReleaseType) => {
-    const base = RELEASE_TYPE_LIMITS[type];
-    return type === 'album' ? { ...base, max: maxAlbumTracks } : base;
+  const getLimits = (t: ReleaseType) => {
+    const b = RELEASE_TYPE_LIMITS[t];
+    return t === 'album' ? { ...b, max: maxAlbumTracks } : b;
   };
 
   // ── state ──
@@ -81,54 +101,60 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
   const [explicitContent, setExplicitContent] = useState(false);
   const [genre, setGenre] = useState('');
   const [coverArtDriveLink, setCoverArtDriveLink] = useState('');
+  const [coverArtImageUrl, setCoverArtImageUrl] = useState('');
+  const [coverArtImgError, setCoverArtImgError] = useState(false);
 
   const [tracks, setTracks] = useState<Track[]>([emptyTrack()]);
-
   const [promoDriveLink, setPromoDriveLink] = useState('');
   const [driveFolderLink, setDriveFolderLink] = useState('');
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
 
   const limits = getLimits(releaseType);
 
+  // ── computed drive context ──
+  const releaseFolderName = useMemo(
+    () => buildReleaseFolderName(mainArtist, releaseTitle),
+    [mainArtist, releaseTitle]
+  );
+  const releaseKey = useMemo(
+    () => buildReleaseKey(mainArtist, releaseTitle),
+    [mainArtist, releaseTitle]
+  );
+
+  const driveProps = {
+    clientId: settings.googleApiClientId || '',
+    apiKey: settings.googleApiKey || '',
+    rootFolderId: settings.driveUploadFolderId || '',
+    releaseKey,
+    releaseFolderName,
+  };
+
   // ── date validation ──
-  const validateDate = (val: string): string => {
-    if (!val) return '';
-    const days = daysUntil(val);
-    if (days < 0) return "You can't pick a date in the past. Please choose a future date.";
-    if (days === 0) return "Same-day releases aren't accepted. Your release must be scheduled in advance.";
-    if (minDays > 0 && days < minDays) {
-      const earliest = getMinDate(minDays);
-      return `Too soon — you need at least ${minDays} day${minDays !== 1 ? 's' : ''} notice. Earliest allowed date: ${formatDate(earliest)}.`;
+  const validateDate = (v: string) => {
+    if (!v) return '';
+    const d = daysUntil(v);
+    if (d < 0) return "You can't pick a past date.";
+    if (d === 0) return "Same-day releases aren't accepted.";
+    if (minDays > 0 && d < minDays) {
+      return `At least ${minDays} day${minDays !== 1 ? 's' : ''} notice required. Earliest: ${fmtDate(getMinDate(minDays))}.`;
     }
     return '';
   };
-
-  const handleDateChange = (val: string) => {
-    setReleaseDate(val);
-    setDateError(validateDate(val));
-  };
-
+  const handleDateChange = (v: string) => { setReleaseDate(v); setDateError(validateDate(v)); };
   const isDateValid = releaseDate !== '' && dateError === '';
 
   // ── track helpers ──
-  const updateTrack = (idx: number, u: Partial<Track>) =>
-    setTracks(prev => prev.map((t, i) => i === idx ? { ...t, ...u } : t));
-
-  const addTrack = () => {
-    if (tracks.length < limits.max) setTracks(prev => [...prev, emptyTrack()]);
-  };
-
-  const removeTrack = (idx: number) => {
-    if (tracks.length > limits.min) setTracks(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleTypeChange = (type: ReleaseType) => {
-    setReleaseType(type);
-    const lim = getLimits(type);
-    setTracks(prev => {
-      if (prev.length < lim.min) return [...prev, ...Array(lim.min - prev.length).fill(null).map(emptyTrack)];
-      if (prev.length > lim.max) return prev.slice(0, lim.max);
-      return prev;
+  const updateTrack = (i: number, u: Partial<Track>) =>
+    setTracks(p => p.map((t, j) => j === i ? { ...t, ...u } : t));
+  const addTrack = () => { if (tracks.length < limits.max) setTracks(p => [...p, emptyTrack()]); };
+  const removeTrack = (i: number) => { if (tracks.length > limits.min) setTracks(p => p.filter((_, j) => j !== i)); };
+  const handleTypeChange = (t: ReleaseType) => {
+    setReleaseType(t);
+    const lim = getLimits(t);
+    setTracks(p => {
+      if (p.length < lim.min) return [...p, ...Array(lim.min - p.length).fill(null).map(emptyTrack)];
+      if (p.length > lim.max) return p.slice(0, lim.max);
+      return p;
     });
   };
 
@@ -138,12 +164,17 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
     i: number, upd: Partial<Collaborator>
   ) => { const u = [...list]; u[i] = { ...u[i], ...upd }; setList(u); };
 
+  // max collaborators / features limits
+  const maxCollabs = settings.maxCollaborators || 0;
+  const maxFeats = settings.maxFeatures || 0;
+
   // ── validation ──
   const isStep1Valid = mainArtist.trim().length > 0;
   const isStep2Valid = releaseTitle.trim().length > 0 && isDateValid && genre.length > 0 && coverArtDriveLink.trim().length > 0;
   const isStep3Valid = tracks.length >= limits.min && tracks.every(t =>
     t.title.trim() && t.wavDriveLink.trim() &&
-    (!settings.requireLyrics || t.lyricsDriveLink?.trim() || t.lyricsGoogleDocsLink?.trim())
+    (!settings.requireLyrics || t.lyricsDriveLink?.trim() || t.lyricsGoogleDocsLink?.trim()) &&
+    (!settings.requireMixMaster || (t.mixedBy.trim() && t.masteredBy.trim()))
   );
   const isStep4Valid =
     rightsConfirmed &&
@@ -158,7 +189,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
         mainArtist, collaborations: collaborations.filter(c => c.name.trim()),
         features: features.filter(f => f.name.trim()),
         releaseType, releaseTitle, releaseDate, explicitContent, genre,
-        coverArtDriveLink, tracks,
+        coverArtDriveLink, coverArtImageUrl, tracks,
         promoDriveLink: promoDriveLink || undefined,
         driveFolderLink: driveFolderLink || undefined,
         rightsConfirmed,
@@ -177,7 +208,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
     setCollaborations([]); setFeatures([]);
     setReleaseType(allowedTypes[0] || 'single'); setReleaseTitle('');
     setReleaseDate(''); setDateError(''); setExplicitContent(false);
-    setGenre(''); setCoverArtDriveLink('');
+    setGenre(''); setCoverArtDriveLink(''); setCoverArtImageUrl(''); setCoverArtImgError(false);
     setTracks([emptyTrack()]); setPromoDriveLink(''); setDriveFolderLink('');
     setRightsConfirmed(false); setSubmitError('');
   };
@@ -216,18 +247,15 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
           <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6 accent-bg-subtle">
             <CheckCircle2 className="w-10 h-10 accent-text" />
           </div>
-          <h2 className="text-2xl font-bold mb-2">Release Submitted! 🎉</h2>
+          <h2 className="text-2xl font-bold mb-2">Release Submitted!</h2>
           <p className="text-zinc-400 mb-6">
             {settings.submissionSuccessMessage || DEFAULT_ADMIN_SETTINGS.submissionSuccessMessage}
           </p>
           <div className="bg-zinc-900/60 rounded-xl p-4 mb-6 border border-white/5">
             <p className="text-xs text-zinc-500 mb-1 uppercase tracking-wide">Submission ID</p>
             <p className="text-lg font-mono font-bold accent-text">{submissionId}</p>
-            <p className="text-xs text-zinc-600 mt-1">Keep this for your records</p>
           </div>
-          <button onClick={resetForm} className="btn-primary px-6 py-3 rounded-xl">
-            Submit Another Release
-          </button>
+          <button onClick={resetForm} className="btn-primary px-6 py-3 rounded-xl">Submit Another Release</button>
         </div>
       </div>
     );
@@ -249,17 +277,15 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* Progress */}
+        {/* Stepper */}
         <div className="flex items-center justify-between mb-10">
           {steps.map((s, i) => (
             <div key={i} className="flex items-center flex-1 last:flex-none">
-              <button
-                onClick={() => { if (i < step) setStep(i); }}
+              <button onClick={() => { if (i < step) setStep(i); }}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   i === step ? 'accent-bg-subtle accent-text glow-border' :
                   i < step ? 'text-emerald-400 cursor-pointer' : 'text-zinc-600'
-                }`}
-              >
+                }`}>
                 <s.icon className="w-4 h-4" />
                 <span className="hidden sm:inline">{s.label}</span>
                 <span className="sm:hidden">{i + 1}</span>
@@ -292,10 +318,12 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                   <h3 className="font-semibold">Collaborations</h3>
                   <p className="text-xs text-zinc-500">Other main artists credited on the release</p>
                 </div>
-                <button onClick={() => setCollaborations(p => [...p, emptyCollab()])}
-                  className="flex items-center gap-1 text-sm accent-text hover:opacity-80">
-                  <Plus className="w-4 h-4" /> Add
-                </button>
+                {(maxCollabs === 0 || collaborations.length < maxCollabs) && (
+                  <button onClick={() => setCollaborations(p => [...p, emptyCollab()])}
+                    className="flex items-center gap-1 text-sm accent-text hover:opacity-80">
+                    <Plus className="w-4 h-4" /> Add
+                  </button>
+                )}
               </div>
               {collaborations.length === 0 && <p className="text-zinc-600 text-sm italic">None added</p>}
               {collaborations.map((c, i) => (
@@ -309,10 +337,10 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                     </button>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
-                    {(['spotify','appleMusic','anghami'] as const).map(p => (
-                      <input key={p} type="url" value={c.platformLinks[p] || ''}
-                        onChange={e => updateCollab(collaborations, setCollaborations, i, { platformLinks: { ...c.platformLinks, [p]: e.target.value } })}
-                        placeholder={p === 'appleMusic' ? 'Apple Music' : p === 'anghami' ? 'Anghami' : 'Spotify'}
+                    {(['spotify','appleMusic','anghami'] as const).map(pl => (
+                      <input key={pl} type="url" value={c.platformLinks[pl] || ''}
+                        onChange={e => updateCollab(collaborations, setCollaborations, i, { platformLinks: { ...c.platformLinks, [pl]: e.target.value } })}
+                        placeholder={pl === 'appleMusic' ? 'Apple Music' : pl === 'anghami' ? 'Anghami' : 'Spotify'}
                         className="input-dark px-3 py-2 rounded-lg text-xs" />
                     ))}
                   </div>
@@ -325,12 +353,14 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="font-semibold">Features</h3>
-                  <p className="text-xs text-zinc-500">Artists featured on specific tracks</p>
+                  <p className="text-xs text-zinc-500">Artists featured on specific tracks (appear as "feat." in track names)</p>
                 </div>
-                <button onClick={() => setFeatures(p => [...p, emptyCollab()])}
-                  className="flex items-center gap-1 text-sm accent-text hover:opacity-80">
-                  <Plus className="w-4 h-4" /> Add
-                </button>
+                {(maxFeats === 0 || features.length < maxFeats) && (
+                  <button onClick={() => setFeatures(p => [...p, emptyCollab()])}
+                    className="flex items-center gap-1 text-sm accent-text hover:opacity-80">
+                    <Plus className="w-4 h-4" /> Add
+                  </button>
+                )}
               </div>
               {features.length === 0 && <p className="text-zinc-600 text-sm italic">None added</p>}
               {features.map((f, i) => (
@@ -344,16 +374,24 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                     </button>
                   </div>
                   <div className="grid grid-cols-3 gap-2">
-                    {(['spotify','appleMusic','anghami'] as const).map(p => (
-                      <input key={p} type="url" value={f.platformLinks[p] || ''}
-                        onChange={e => updateCollab(features, setFeatures, i, { platformLinks: { ...f.platformLinks, [p]: e.target.value } })}
-                        placeholder={p === 'appleMusic' ? 'Apple Music' : p === 'anghami' ? 'Anghami' : 'Spotify'}
+                    {(['spotify','appleMusic','anghami'] as const).map(pl => (
+                      <input key={pl} type="url" value={f.platformLinks[pl] || ''}
+                        onChange={e => updateCollab(features, setFeatures, i, { platformLinks: { ...f.platformLinks, [pl]: e.target.value } })}
+                        placeholder={pl === 'appleMusic' ? 'Apple Music' : pl === 'anghami' ? 'Anghami' : 'Spotify'}
                         className="input-dark px-3 py-2 rounded-lg text-xs" />
                     ))}
                   </div>
                 </div>
               ))}
             </div>
+
+            {/* Artist line preview */}
+            {(mainArtist || collaborations.some(c => c.name.trim())) && (
+              <div className="text-center py-2 opacity-60">
+                <p className="text-xs text-zinc-500 mb-1">Will appear as</p>
+                <p className="font-semibold text-sm">{buildArtistLine(mainArtist, collaborations)}</p>
+              </div>
+            )}
 
             <div className="flex justify-end">
               <button onClick={() => setStep(1)} disabled={!isStep1Valid} className="btn-primary px-6 py-3 rounded-xl flex items-center gap-2">
@@ -375,15 +413,13 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
               {/* Release Type */}
               <div>
                 <label className="block text-sm font-semibold mb-3">Release Type <span className="text-red-400">*</span></label>
-                <div className={`grid gap-3`} style={{ gridTemplateColumns: `repeat(${allowedTypes.length}, 1fr)` }}>
+                <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${allowedTypes.length}, 1fr)` }}>
                   {allowedTypes.map(type => {
                     const lim = getLimits(type);
                     const active = releaseType === type;
                     return (
                       <button key={type} onClick={() => handleTypeChange(type)}
-                        className={`p-4 rounded-xl border text-center transition-all ${
-                          active ? 'accent-border accent-bg-subtle accent-text' : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600'
-                        }`}>
+                        className={`p-4 rounded-xl border text-center transition-all ${active ? 'accent-border accent-bg-subtle accent-text' : 'border-zinc-800 bg-zinc-900/50 text-zinc-400 hover:border-zinc-600'}`}>
                         <div className="text-lg font-bold uppercase">{type}</div>
                         <div className="text-xs mt-1 opacity-70">
                           {type === 'single' ? '1 track' : type === 'ep' ? '3–6 tracks' : `Up to ${lim.max} tracks`}
@@ -404,37 +440,28 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {/* Release Date */}
                 <div>
-                  <label className="block text-sm font-semibold mb-2">
-                    Release Date <span className="text-red-400">*</span>
-                  </label>
+                  <label className="block text-sm font-semibold mb-2">Release Date <span className="text-red-400">*</span></label>
                   <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none z-10" />
-                    <input
-                      type="date"
-                      value={releaseDate}
+                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+                    <input type="date" value={releaseDate}
                       min={getMinDate(Math.max(1, minDays))}
                       onChange={e => handleDateChange(e.target.value)}
-                      className={`input-dark w-full pl-10 pr-4 py-3 rounded-xl ${dateError ? 'border-red-500/50' : ''}`}
-                    />
+                      className={`input-dark w-full pl-10 pr-4 py-3 rounded-xl ${dateError ? 'border-red-500/50' : ''}`} />
                   </div>
-
-                  {/* Validation message */}
                   {dateError ? (
                     <div className="mt-2 flex items-start gap-2 bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5">
                       <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                      <p className="text-xs text-red-300 leading-relaxed">{dateError}</p>
+                      <p className="text-xs text-red-300">{dateError}</p>
                     </div>
                   ) : releaseDate && isDateValid ? (
                     <div className="mt-2 flex items-center gap-2 text-emerald-400 text-xs">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      {formatDate(releaseDate)} — {daysUntil(releaseDate)} days from today
+                      {fmtDate(releaseDate)} — {daysUntil(releaseDate)} days from today
                     </div>
                   ) : (
                     <div className="mt-2 flex items-center gap-1.5 text-zinc-600 text-xs">
                       <Clock className="w-3 h-3" />
-                      {minDays > 0
-                        ? `Minimum ${minDays} day${minDays !== 1 ? 's' : ''} notice — earliest: ${formatDate(getMinDate(minDays))}`
-                        : 'Choose any future date'}
+                      {minDays > 0 ? `Min ${minDays} day${minDays !== 1 ? 's' : ''} notice — earliest: ${fmtDate(getMinDate(minDays))}` : 'Any future date'}
                     </div>
                   )}
                 </div>
@@ -454,30 +481,66 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                 <label className="block text-sm font-semibold mb-3">Explicit Content</label>
                 <div className="flex gap-3">
                   <button onClick={() => setExplicitContent(false)}
-                    className={`px-5 py-2 rounded-lg border text-sm font-medium transition-all ${!explicitContent ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 text-zinc-500 hover:border-zinc-600'}`}>
-                    Clean ✓
+                    className={`px-6 py-2.5 rounded-lg border text-sm font-medium transition-all ${!explicitContent ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 text-zinc-500 hover:border-zinc-600'}`}>
+                    Clean
                   </button>
                   <button onClick={() => setExplicitContent(true)}
-                    className={`px-5 py-2 rounded-lg border text-sm font-medium transition-all ${explicitContent ? 'border-red-500 bg-red-500/10 text-red-400' : 'border-zinc-800 text-zinc-500 hover:border-zinc-600'}`}>
-                    Explicit 🔞
+                    className={`px-6 py-2.5 rounded-lg border text-sm font-medium transition-all ${explicitContent ? 'border-red-500 bg-red-500/10 text-red-400' : 'border-zinc-800 text-zinc-500 hover:border-zinc-600'}`}>
+                    Explicit
                   </button>
                 </div>
               </div>
             </div>
 
             {/* Cover Art */}
-            <div className="glass-card rounded-2xl p-6">
+            <div className="glass-card rounded-2xl p-6 space-y-5">
+              <div>
+                <h3 className="font-semibold mb-1">Cover Art</h3>
+                <p className="text-xs text-zinc-500">JPG or PNG, 3000×3000px recommended</p>
+              </div>
+
+              {/* Drive upload / link */}
               <DrivePickerButton
                 value={coverArtDriveLink}
                 onChange={(link) => setCoverArtDriveLink(link)}
-                label="Cover Art"
-                hint="JPG or PNG, 3000×3000px recommended. Upload directly or paste a Google Drive share link."
+                label="Cover Art File"
+                hint="Upload the artwork file or paste a Google Drive share link"
                 required
-                clientId={settings.googleApiClientId || ''}
-                apiKey={settings.googleApiKey || ''}
-                uploadFolderId={settings.driveUploadFolderId || ''}
+                subFolder="Cover Art"
                 pickerTitle="Upload Cover Art"
+                {...driveProps}
               />
+
+              {/* Optional direct image URL + preview */}
+              {(settings.allowCoverArtImageUrl !== false) && (
+                <div>
+                  <label className="block text-sm font-semibold mb-1.5 flex items-center gap-2">
+                    <Image className="w-4 h-4 text-zinc-500" />
+                    Direct Image URL <span className="text-zinc-600 font-normal text-xs ml-1">(optional — for thumbnail preview)</span>
+                  </label>
+                  <input type="url" value={coverArtImageUrl}
+                    onChange={e => { setCoverArtImageUrl(e.target.value); setCoverArtImgError(false); }}
+                    placeholder="https://i.imgur.com/xxx.jpg or imgbb direct link"
+                    className="input-dark w-full px-4 py-3 rounded-xl text-sm" />
+                  {coverArtImageUrl && !coverArtImgError && (
+                    <div className="mt-3 flex items-start gap-4">
+                      <img
+                        src={coverArtImageUrl}
+                        alt="Cover art preview"
+                        onError={() => setCoverArtImgError(true)}
+                        className="w-24 h-24 rounded-xl object-cover border border-white/10 flex-shrink-0 bg-zinc-900"
+                      />
+                      <div className="pt-1">
+                        <p className="text-xs text-zinc-400 font-medium">Preview</p>
+                        <p className="text-xs text-zinc-600 mt-0.5">This is how the artwork will appear in the admin panel</p>
+                      </div>
+                    </div>
+                  )}
+                  {coverArtImgError && (
+                    <p className="text-xs text-amber-400 mt-1.5">Could not load image — make sure the URL is a direct image link</p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex justify-between">
@@ -498,8 +561,9 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
               <div>
                 <h2 className="text-2xl font-bold mb-1">Tracklist</h2>
                 <p className="text-zinc-500 text-sm">
-                  {limits.label} · {tracks.length} / {limits.max} tracks
-                  {settings.requireLyrics && <span className="ml-2 text-amber-400 text-xs">· Lyrics required per track</span>}
+                  {limits.label} · {tracks.length}/{limits.max} tracks
+                  {settings.requireLyrics && <span className="ml-2 text-amber-400 text-xs">· Lyrics required</span>}
+                  {settings.requireMixMaster && <span className="ml-2 text-amber-400 text-xs">· Mix/master credits required</span>}
                 </p>
               </div>
               {tracks.length < limits.max && (
@@ -509,102 +573,107 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
               )}
             </div>
 
-            {tracks.map((track, idx) => (
-              <div key={idx} className="glass-card rounded-2xl p-6 space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold uppercase tracking-widest accent-text">Track {idx + 1}</span>
-                  {tracks.length > limits.min && (
-                    <button onClick={() => removeTrack(idx)} className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1">
-                      <Trash2 className="w-3 h-3" /> Remove
-                    </button>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Track Title <span className="text-red-400">*</span></label>
-                    <input type="text" value={track.title} onChange={e => updateTrack(idx, { title: e.target.value })}
-                      placeholder="Track title" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
+            {tracks.map((track, idx) => {
+              const trackFolderName = `Track ${String(idx + 1).padStart(2, '0')}${track.title ? ` — ${track.title}` : ''}`;
+              const displayName = buildTrackDisplay(track.title, features);
+              return (
+                <div key={idx} className="glass-card rounded-2xl p-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="text-xs font-bold uppercase tracking-widest accent-text">Track {idx + 1}</span>
+                      {displayName && (
+                        <p className="text-xs text-zinc-500 mt-0.5 font-mono">{displayName}</p>
+                      )}
+                    </div>
+                    {tracks.length > limits.min && (
+                      <button onClick={() => removeTrack(idx)} className="text-red-400 hover:text-red-300 text-xs flex items-center gap-1">
+                        <Trash2 className="w-3 h-3" /> Remove
+                      </button>
+                    )}
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Explicit</label>
-                    <div className="flex gap-2">
-                      <button onClick={() => updateTrack(idx, { explicit: false })}
-                        className={`flex-1 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${!track.explicit ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 text-zinc-600'}`}>
-                        Clean
-                      </button>
-                      <button onClick={() => updateTrack(idx, { explicit: true })}
-                        className={`flex-1 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${track.explicit ? 'border-red-500 bg-red-500/10 text-red-400' : 'border-zinc-800 text-zinc-600'}`}>
-                        🔞
-                      </button>
+
+                  {/* Title + Explicit */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Track Title <span className="text-red-400">*</span></label>
+                      <input type="text" value={track.title} onChange={e => updateTrack(idx, { title: e.target.value })}
+                        placeholder="Track title" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Explicit</label>
+                      <div className="flex gap-2">
+                        <button onClick={() => updateTrack(idx, { explicit: false })}
+                          className={`flex-1 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${!track.explicit ? 'border-emerald-500 bg-emerald-500/10 text-emerald-400' : 'border-zinc-800 text-zinc-600'}`}>
+                          Clean
+                        </button>
+                        <button onClick={() => updateTrack(idx, { explicit: true })}
+                          className={`flex-1 px-3 py-2.5 rounded-lg border text-xs font-medium transition-all ${track.explicit ? 'border-red-500 bg-red-500/10 text-red-400' : 'border-zinc-800 text-zinc-600'}`}>
+                          Explicit
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Preview / TikTok Start</label>
-                    <input type="text" value={track.previewStart} onChange={e => updateTrack(idx, { previewStart: e.target.value })}
-                      placeholder="0:00" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-1.5">Preview / TikTok End</label>
-                    <input type="text" value={track.previewEnd} onChange={e => updateTrack(idx, { previewEnd: e.target.value })}
-                      placeholder="0:30" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
-                  </div>
-                </div>
+                  {/* TikTok timestamps */}
+                  {(settings.requireTikTokTimestamp || true) && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                          Preview Start {settings.requireTikTokTimestamp && <span className="text-amber-400">*</span>}
+                        </label>
+                        <input type="text" value={track.previewStart} onChange={e => updateTrack(idx, { previewStart: e.target.value })}
+                          placeholder="0:00" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">
+                          Preview End {settings.requireTikTokTimestamp && <span className="text-amber-400">*</span>}
+                        </label>
+                        <input type="text" value={track.previewEnd} onChange={e => updateTrack(idx, { previewEnd: e.target.value })}
+                          placeholder="0:30" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
+                      </div>
+                    </div>
+                  )}
 
-                <div>
+                  {/* WAV upload */}
                   <DrivePickerButton
                     value={track.wavDriveLink}
                     onChange={(link) => updateTrack(idx, { wavDriveLink: link })}
                     label="WAV File"
-                    hint="Upload the master WAV file, or paste a Drive link."
+                    hint="Master WAV — upload or paste a Drive link"
                     required
                     size="sm"
-                    clientId={settings.googleApiClientId || ''}
-                    apiKey={settings.googleApiKey || ''}
-                    uploadFolderId={settings.driveUploadFolderId || ''}
-                    pickerTitle={`Upload WAV — Track ${idx + 1}`}
+                    subFolder={trackFolderName}
+                    pickerTitle={`Upload WAV — Track ${idx + 1}${track.title ? `: ${track.title}` : ''}`}
+                    {...driveProps}
                   />
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <DrivePickerButton
-                      value={track.lyricsDriveLink || ''}
-                      onChange={(link) => updateTrack(idx, { lyricsDriveLink: link })}
-                      label={`Lyrics${settings.requireLyrics ? '' : ' (optional)'}`}
-                      hint="Upload a .txt / .docx lyrics file."
-                      required={settings.requireLyrics}
-                      size="sm"
-                      clientId={settings.googleApiClientId || ''}
-                      apiKey={settings.googleApiKey || ''}
-                      uploadFolderId={settings.driveUploadFolderId || ''}
-                      pickerTitle={`Upload Lyrics — Track ${idx + 1}`}
-                    />
-                  </div>
+                  {/* Lyrics — Google Docs only (Drive upload removed) */}
                   <div>
                     <label className="block text-xs font-medium text-zinc-400 mb-1.5">
-                      Lyrics — Google Docs {settings.requireLyrics && <span className="text-amber-400">*</span>}
+                      Lyrics — Google Docs Link {settings.requireLyrics && <span className="text-amber-400">*</span>}
                     </label>
-                    <input type="url" value={track.lyricsGoogleDocsLink || ''} onChange={e => updateTrack(idx, { lyricsGoogleDocsLink: e.target.value })}
-                      placeholder="Google Docs link" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
+                    <input type="url" value={track.lyricsGoogleDocsLink || ''}
+                      onChange={e => updateTrack(idx, { lyricsGoogleDocsLink: e.target.value })}
+                      placeholder="https://docs.google.com/document/d/..." className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
                   </div>
-                </div>
 
-                <div>
-                  <label className="block text-xs font-medium text-zinc-400 mb-2">Credits</label>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    {([['producedBy','Produced by'],['lyricsBy','Lyrics by'],['mixedBy','Mixed by'],['masteredBy','Mastered by']] as const).map(([k, lbl]) => (
-                      <input key={k} type="text" value={(track as Record<string, string>)[k]}
-                        onChange={e => updateTrack(idx, { [k]: e.target.value } as Partial<Track>)}
-                        placeholder={lbl} className="input-dark px-3 py-2.5 rounded-lg text-sm" />
-                    ))}
+                  {/* Credits */}
+                  <div>
+                    <label className="block text-xs font-medium text-zinc-400 mb-2">
+                      Credits {settings.requireMixMaster && <span className="text-amber-400 text-xs ml-1">(Mix & Master required *)</span>}
+                    </label>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      {([['producedBy','Produced by'],['lyricsBy','Lyrics by'],['mixedBy','Mixed by'],['masteredBy','Mastered by']] as const).map(([k, lbl]) => (
+                        <input key={k} type="text" value={(track as Record<string, string>)[k]}
+                          onChange={e => updateTrack(idx, { [k]: e.target.value } as Partial<Track>)}
+                          placeholder={lbl + (settings.requireMixMaster && (k === 'mixedBy' || k === 'masteredBy') ? ' *' : '')}
+                          className="input-dark px-3 py-2.5 rounded-lg text-sm" />
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             <div className="flex justify-between">
               <button onClick={() => setStep(1)} className="px-6 py-3 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white transition-all flex items-center gap-2">
@@ -622,26 +691,22 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
           <div className="fade-in space-y-8">
             <div>
               <h2 className="text-2xl font-bold mb-1">Final Details & Submit</h2>
-              <p className="text-zinc-500 text-sm">Add promo links and confirm your submission</p>
+              <p className="text-zinc-500 text-sm">Additional links and final confirmation</p>
             </div>
 
             <div className="glass-card rounded-2xl p-6 space-y-5">
               <div>
                 <label className="block text-sm font-semibold mb-1">
-                  Promo Pictures / Videos
-                  {settings.requirePromoMaterials && <span className="text-red-400 ml-1">*</span>}
+                  Promo Materials {settings.requirePromoMaterials && <span className="text-red-400">*</span>}
                 </label>
-                <p className="text-xs text-zinc-500 mb-3">Google Drive folder with promo photos & videos for social media</p>
+                <p className="text-xs text-zinc-500 mb-3">Google Drive folder with promo photos & videos</p>
                 <DrivePickerButton
                   value={promoDriveLink}
                   onChange={(link) => setPromoDriveLink(link)}
-                  label=""
-                  hint=""
-                  required={settings.requirePromoMaterials}
-                  clientId={settings.googleApiClientId || ''}
-                  apiKey={settings.googleApiKey || ''}
-                  uploadFolderId={settings.driveUploadFolderId || ''}
+                  subFolder="Promo Materials"
                   pickerTitle="Upload Promo Materials"
+                  required={settings.requirePromoMaterials}
+                  {...driveProps}
                 />
                 {settings.requirePromoMaterials && !promoDriveLink.trim() && (
                   <p className="text-xs text-amber-400 mt-2 flex items-center gap-1">
@@ -652,10 +717,9 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
 
               <div>
                 <label className="block text-sm font-semibold mb-1">
-                  Main Drive Folder
-                  {settings.requireDriveFolder && <span className="text-red-400 ml-1">*</span>}
+                  Main Drive Folder {settings.requireDriveFolder && <span className="text-red-400">*</span>}
                 </label>
-                <p className="text-xs text-zinc-500 mb-3">Shared folder containing all your release assets (WAV, artwork, docs)</p>
+                <p className="text-xs text-zinc-500 mb-3">Shared folder containing all release assets</p>
                 <input type="url" value={driveFolderLink} onChange={e => setDriveFolderLink(e.target.value)}
                   placeholder="https://drive.google.com/drive/folders/..." className="input-dark w-full px-4 py-3 rounded-xl" />
                 {settings.requireDriveFolder && !driveFolderLink.trim() && (
@@ -669,24 +733,46 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
             {/* Summary */}
             <div className="glass-card rounded-2xl p-6">
               <h3 className="font-bold mb-4 text-sm uppercase tracking-wider text-zinc-400">Submission Summary</h3>
-              <div className="space-y-2.5">
-                {[
-                  ['Main Artist', mainArtist],
-                  ['Title', `${releaseTitle} (${releaseType.toUpperCase()})`],
-                  ['Genre', genre],
-                  ['Release Date', `${formatDate(releaseDate)} · ${daysUntil(releaseDate)} days away`],
-                  ['Tracks', `${tracks.length} track${tracks.length !== 1 ? 's' : ''}`],
-                  ['Explicit', explicitContent ? 'Yes 🔞' : 'Clean ✓'],
-                ].map(([label, val]) => (
-                  <div key={label} className="flex justify-between text-sm py-1.5 border-b border-white/[0.04] last:border-0">
-                    <span className="text-zinc-500">{label}</span>
-                    <span className="font-medium text-right max-w-xs truncate">{val}</span>
-                  </div>
-                ))}
+              <div className="flex gap-4">
+                {coverArtImageUrl && !coverArtImgError && (
+                  <img src={coverArtImageUrl} alt="Cover"
+                    className="w-20 h-20 rounded-xl object-cover border border-white/10 flex-shrink-0"
+                    onError={() => setCoverArtImgError(true)} />
+                )}
+                <div className="flex-1 space-y-2">
+                  {[
+                    ['Artist', buildArtistLine(mainArtist, collaborations)],
+                    ['Title', `${releaseTitle} (${releaseType.toUpperCase()})`],
+                    ['Genre', genre],
+                    ['Release', `${fmtDate(releaseDate)} · ${daysUntil(releaseDate)} days away`],
+                    ['Tracks', `${tracks.length} track${tracks.length !== 1 ? 's' : ''}`],
+                    ['Explicit', explicitContent ? 'Yes' : 'No'],
+                  ].map(([l, v]) => (
+                    <div key={l} className="flex justify-between text-sm py-1 border-b border-white/[0.04] last:border-0">
+                      <span className="text-zinc-500">{l}</span>
+                      <span className="font-medium text-right max-w-xs truncate">{v}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
+              {/* Track list with Spotify-style names */}
+              {tracks.length > 0 && (
+                <div className="mt-4 pt-4 border-t border-white/[0.04]">
+                  <p className="text-xs text-zinc-500 mb-2 uppercase tracking-wide">Tracks</p>
+                  <div className="space-y-1">
+                    {tracks.map((t, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        <span className="text-zinc-600 w-5 text-right flex-shrink-0">{i + 1}</span>
+                        <span className="font-medium">{buildTrackDisplay(t.title, features) || <span className="text-zinc-600 italic">Untitled</span>}</span>
+                        {t.explicit && <span className="text-xs text-red-400 border border-red-400/30 px-1 rounded">E</span>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Rights agreement */}
+            {/* Rights */}
             <label className="flex items-start gap-4 glass-card rounded-2xl p-6 cursor-pointer hover:bg-white/[0.02] transition-all">
               <input type="checkbox" checked={rightsConfirmed} onChange={e => setRightsConfirmed(e.target.checked)}
                 className="mt-0.5 w-5 h-5 flex-shrink-0 rounded" style={{ accentColor: 'var(--accent)' }} />
@@ -709,11 +795,38 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
               <button onClick={handleSubmit} disabled={!isStep4Valid || submitting}
                 className="btn-primary px-8 py-3 rounded-xl flex items-center gap-2 text-base">
                 {submitting
-                  ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting...</>
-                  : <><CheckCircle2 className="w-5 h-5" /> Submit Release</>
-                }
+                  ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Submitting…</>
+                  : <><CheckCircle2 className="w-5 h-5" /> Submit Release</>}
               </button>
             </div>
+
+            {/* Footer */}
+            {(settings.formFooterText || settings.labelEmail || settings.labelInstagram || settings.labelWebsite) && (
+              <div className="text-center pt-4 border-t border-white/5 space-y-2">
+                {settings.formFooterText && (
+                  <p className="text-xs text-zinc-600">{settings.formFooterText}</p>
+                )}
+                <div className="flex items-center justify-center gap-4 flex-wrap">
+                  {settings.labelEmail && (
+                    <a href={`mailto:${settings.labelEmail}`} className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400">
+                      <Mail className="w-3 h-3" /> {settings.labelEmail}
+                    </a>
+                  )}
+                  {settings.labelInstagram && (
+                    <a href={`https://instagram.com/${settings.labelInstagram.replace('@','')}`} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400">
+                      <Instagram className="w-3 h-3" /> @{settings.labelInstagram.replace('@','')}
+                    </a>
+                  )}
+                  {settings.labelWebsite && (
+                    <a href={settings.labelWebsite} target="_blank" rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400">
+                      <Globe className="w-3 h-3" /> {settings.labelWebsite.replace(/^https?:\/\//,'')}
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

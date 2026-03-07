@@ -165,6 +165,17 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
         <div className="space-y-3">
           {filtered.map(release => (
             <div key={release.id} className="glass-card rounded-xl p-4 flex items-center gap-4 hover:bg-white/[0.03] transition-all">
+              {/* Artwork thumbnail */}
+              <div className="w-12 h-12 rounded-lg flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/5">
+                {release.coverArtImageUrl ? (
+                  <img src={release.coverArtImageUrl} alt="" className="w-full h-full object-cover"
+                    onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <Music2 className="w-5 h-5 text-zinc-700" />
+                  </div>
+                )}
+              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="font-mono text-xs text-zinc-500">{release.id}</span>
@@ -174,7 +185,9 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
                   )}
                 </div>
                 <p className="font-semibold truncate">{release.releaseTitle}</p>
-                <p className="text-sm text-zinc-400 truncate">{release.mainArtist}</p>
+                <p className="text-sm text-zinc-400 truncate">
+                  {[release.mainArtist, ...release.collaborations.map(c => c.name).filter(Boolean)].join(', ')}
+                </p>
                 <p className="text-xs text-zinc-600 mt-1">{release.genre} • {release.releaseDate} • {release.tracks.length} track{release.tracks.length !== 1 ? 's' : ''}</p>
               </div>
 

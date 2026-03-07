@@ -33,6 +33,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
   const [genre, setGenre] = useState(initialRelease.genre);
   const [explicitContent, setExplicitContent] = useState(initialRelease.explicitContent);
   const [coverArtDriveLink, setCoverArtDriveLink] = useState(initialRelease.coverArtDriveLink);
+  const [coverArtImageUrl, setCoverArtImageUrl] = useState(initialRelease.coverArtImageUrl || '');
   const [promoDriveLink, setPromoDriveLink] = useState(initialRelease.promoDriveLink || '');
   const [driveFolderLink, setDriveFolderLink] = useState(initialRelease.driveFolderLink || '');
   const [collaborations, setCollaborations] = useState<Collaborator[]>([...initialRelease.collaborations]);
@@ -56,6 +57,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
         genre,
         explicitContent,
         coverArtDriveLink,
+        coverArtImageUrl,
         promoDriveLink: promoDriveLink || undefined,
         driveFolderLink: driveFolderLink || undefined,
         collaborations: collaborations.filter(c => c.name.trim()),
@@ -82,11 +84,12 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
     setGenre(initialRelease.genre);
     setExplicitContent(initialRelease.explicitContent);
     setCoverArtDriveLink(initialRelease.coverArtDriveLink);
-    setPromoDriveLink(fresh.promoDriveLink || '');
-    setDriveFolderLink(fresh.driveFolderLink || '');
-    setCollaborations([...fresh.collaborations]);
-    setFeatures([...fresh.features]);
-    setTracks([...fresh.tracks]);
+    setCoverArtImageUrl(initialRelease.coverArtImageUrl || '');
+    setPromoDriveLink(initialRelease.promoDriveLink || '');
+    setDriveFolderLink(initialRelease.driveFolderLink || '');
+    setCollaborations([...initialRelease.collaborations]);
+    setFeatures([...initialRelease.features]);
+    setTracks([...initialRelease.tracks]);
     setEditing(false);
   };
 
@@ -144,10 +147,19 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
       {/* Title Card */}
       <div className="glass-card rounded-2xl p-6">
         <div className="flex items-start gap-4">
-          <div className="w-14 h-14 rounded-xl bg-violet-500/20 flex items-center justify-center flex-shrink-0">
-            <Music className="w-7 h-7 text-violet-400" />
+          {/* Artwork thumbnail or fallback icon */}
+          <div className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/10">
+            {coverArtImageUrl ? (
+              <img src={coverArtImageUrl} alt="Cover art"
+                className="w-full h-full object-cover"
+                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center">
+                <Music className="w-8 h-8 text-zinc-600" />
+              </div>
+            )}
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             {editing ? (
               <div className="space-y-3">
                 <input type="text" value={releaseTitle} onChange={e => setReleaseTitle(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-lg font-bold" placeholder="Release Title" />
@@ -155,8 +167,10 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
               </div>
             ) : (
               <>
-                <h2 className="text-2xl font-bold">{releaseTitle}</h2>
-                <p className="text-zinc-400">by {mainArtist}</p>
+                <h2 className="text-2xl font-bold truncate">{releaseTitle}</h2>
+                <p className="text-zinc-400 truncate">
+                  {[mainArtist, ...collaborations.map(c => c.name).filter(Boolean)].join(', ')}
+                </p>
               </>
             )}
             <div className="flex flex-wrap gap-3 mt-2">
@@ -209,6 +223,14 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                 <div>
                   <label className="block text-xs text-zinc-500 mb-1">Cover Art — Google Drive Link</label>
                   <input type="url" value={coverArtDriveLink} onChange={e => setCoverArtDriveLink(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://drive.google.com/..." />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-500 mb-1">Cover Art — Direct Image URL <span className="text-zinc-600">(for thumbnail)</span></label>
+                  <input type="url" value={coverArtImageUrl} onChange={e => setCoverArtImageUrl(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://i.imgbb.com/..." />
+                  {coverArtImageUrl && (
+                    <img src={coverArtImageUrl} alt="Preview" className="mt-2 w-16 h-16 rounded-lg object-cover border border-white/10"
+                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  )}
                 </div>
               </div>
             ) : (
@@ -374,10 +396,17 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-3">
                           <span className="text-xs font-mono text-zinc-600 w-6">{String(i + 1).padStart(2, '0')}</span>
-                          <span className="font-medium text-sm">{track.title}</span>
+                          <div>
+                            <span className="font-medium text-sm">
+                              {track.title}
+                              {features.filter(f => f.name.trim()).length > 0 && (
+                                <span className="text-zinc-500 font-normal"> (feat. {features.filter(f => f.name.trim()).map(f => f.name).join(', ')})</span>
+                              )}
+                            </span>
+                          </div>
                           {track.explicit && <span className="px-1.5 py-0.5 bg-red-500/20 text-red-400 text-[10px] rounded font-bold">E</span>}
                         </div>
-                        <span className="text-xs text-zinc-500">{track.previewStart} - {track.previewEnd}</span>
+                        <span className="text-xs text-zinc-500">{track.previewStart} – {track.previewEnd}</span>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs text-zinc-500 mt-2">
                         {track.producedBy && <span>Produced: {track.producedBy}</span>}
