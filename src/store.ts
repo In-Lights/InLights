@@ -7,6 +7,22 @@ import { ReleaseSubmission, AdminSettings, DEFAULT_ADMIN_SETTINGS } from './type
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
+if (!supabaseUrl || !supabaseAnonKey) {
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#09090b;font-family:sans-serif;color:#fff;padding:2rem;text-align:center;">
+      <div>
+        <h2 style="color:#a78bfa;margin-bottom:1rem">⚠️ Missing Supabase Configuration</h2>
+        <p style="color:#a1a1aa;margin-bottom:0.5rem">Add these environment variables to your Vercel project:</p>
+        <code style="display:block;background:#18181b;padding:1rem;border-radius:8px;margin-top:1rem;text-align:left;line-height:2">
+          VITE_SUPABASE_URL=https://your-project.supabase.co<br/>
+          VITE_SUPABASE_ANON_KEY=your-anon-key
+        </code>
+        <p style="color:#71717a;margin-top:1rem;font-size:0.85rem">Then redeploy the project.</p>
+      </div>
+    </div>`;
+  throw new Error('Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY');
+}
+
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // ============================================================
@@ -34,7 +50,7 @@ export async function getAdminSettings(): Promise<AdminSettings> {
   const { data, error } = await supabase
     .from('settings')
     .select('*')
-    .eq('id', 1)
+    .eq('settings_id', 1)
     .single();
 
   if (error || !data) return { ...DEFAULT_ADMIN_SETTINGS };
@@ -53,18 +69,22 @@ export async function getAdminSettings(): Promise<AdminSettings> {
 }
 
 export async function saveAdminSettings(settings: AdminSettings): Promise<void> {
-  await supabase.from('settings').upsert({
-    id: 1,
-    company_name: settings.companyName,
-    company_logo: settings.companyLogo,
-    admin_username: settings.adminUsername,
-    admin_password: settings.adminPassword,
-    form_welcome_text: settings.formWelcomeText,
-    form_description: settings.formDescription,
-    notification_email: settings.notificationEmail,
-    discord_webhook: settings.discordWebhook,
-    google_sheets_webhook: settings.googleSheetsWebhook,
-  });
+  const { error } = await supabase
+    .from('settings')
+    .update({
+      company_name: settings.companyName,
+      company_logo: settings.companyLogo,
+      admin_username: settings.adminUsername,
+      admin_password: settings.adminPassword,
+      form_welcome_text: settings.formWelcomeText,
+      form_description: settings.formDescription,
+      notification_email: settings.notificationEmail ?? null,
+      discord_webhook: settings.discordWebhook ?? null,
+      google_sheets_webhook: settings.googleSheetsWebhook ?? null,
+    })
+    .eq('settings_id', 1);
+
+  if (error) throw new Error(error.message);
 
   if (settings.googleSheetsWebhook) {
     pushSettingsToSheet(settings);
@@ -81,7 +101,7 @@ export async function fetchPublicBranding(): Promise<{
   const { data, error } = await supabase
     .from('settings')
     .select('company_name, company_logo, form_welcome_text, form_description')
-    .eq('id', 1)
+    .eq('settings_id', 1)
     .single();
 
   if (error || !data) return null;

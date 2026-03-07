@@ -36,8 +36,8 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       onSaved();
-    } catch {
-      setSaveError('Failed to save settings. Please try again.');
+    } catch (err) {
+      setSaveError(`Failed to save: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setSaving(false);
     }
