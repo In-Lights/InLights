@@ -115,6 +115,7 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     requireCredits: data.require_credits ?? false,
     requireTikTokTimestamp: data.require_tiktok_timestamp ?? false,
     maxCollaborators: data.max_collaborators ?? 0,
+    showArtistEmail: data.show_artist_email ?? true,
     maxFeatures: data.max_features ?? 0,
     formFooterText: data.form_footer_text ?? '',
     labelEmail: data.label_email ?? '',
@@ -176,6 +177,7 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       require_mix_master: settings.requireMixMaster ?? false,
       require_credits: settings.requireCredits ?? false,
       require_tiktok_timestamp: settings.requireTikTokTimestamp ?? false,
+      show_artist_email: settings.showArtistEmail ?? true,
       max_collaborators: settings.maxCollaborators ?? 0,
       max_features: settings.maxFeatures ?? 0,
       form_footer_text: settings.formFooterText || null,
@@ -210,7 +212,7 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
 export async function fetchPublicBranding(): Promise<Partial<AdminSettings> | null> {
   const { data, error } = await supabase
     .from('settings')
-    .select('company_name, company_logo, form_welcome_text, form_description, accent_color, submission_success_message, rights_agreement_text, require_drive_folder, require_promo_materials, require_lyrics, min_release_days_notice, max_tracks_album, allowed_release_types, custom_genres, maintenance_mode, maintenance_mode_message, require_cover_art_specs, submission_cooldown_hours, form_accent_button_label, drive_picker_enabled, google_api_client_id, google_api_key, drive_upload_folder_id, allow_cover_art_image_url, show_artwork_preview, require_mix_master, require_credits, require_tiktok_timestamp, max_collaborators, max_features, form_footer_text, label_email, label_instagram, label_website')
+    .select('company_name, company_logo, form_welcome_text, form_description, accent_color, submission_success_message, rights_agreement_text, require_drive_folder, require_promo_materials, require_lyrics, min_release_days_notice, max_tracks_album, allowed_release_types, custom_genres, maintenance_mode, maintenance_mode_message, require_cover_art_specs, submission_cooldown_hours, form_accent_button_label, drive_picker_enabled, google_api_client_id, google_api_key, drive_upload_folder_id, allow_cover_art_image_url, show_artwork_preview, require_mix_master, require_credits, require_tiktok_timestamp, show_artist_email, max_collaborators, max_features, form_footer_text, label_email, label_instagram, label_website')
     .eq('settings_id', 1)
     .single();
 
@@ -245,6 +247,7 @@ export async function fetchPublicBranding(): Promise<Partial<AdminSettings> | nu
     requireMixMaster: data.require_mix_master ?? false,
     requireCredits: data.require_credits ?? false,
     requireTikTokTimestamp: data.require_tiktok_timestamp ?? false,
+    showArtistEmail: data.show_artist_email ?? true,
     maxCollaborators: data.max_collaborators ?? 0,
     maxFeatures: data.max_features ?? 0,
     formFooterText: data.form_footer_text ?? '',
@@ -1183,3 +1186,4 @@ export async function flushOfflineQueue(): Promise<number> {
 // ── NOTE: run these migrations in Supabase SQL Editor ──────────────────────
 // ALTER TABLE settings ADD COLUMN IF NOT EXISTS gemini_api_key TEXT;
 // ALTER TABLE settings ADD COLUMN IF NOT EXISTS gmail_webhook_url TEXT;
+// ALTER TABLE settings ADD COLUMN IF NOT EXISTS show_artist_email BOOLEAN DEFAULT true;

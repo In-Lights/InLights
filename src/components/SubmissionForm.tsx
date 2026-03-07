@@ -442,12 +442,14 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                 <input type="text" value={mainArtist} onChange={e => { setMainArtist(e.target.value); triggerAutoSave(); }}
                   placeholder="Artist or band name" className="input-dark w-full px-4 py-3 rounded-xl" />
               </div>
+              {settings.showArtistEmail !== false && (
               <div>
                 <label className="block text-sm font-semibold mb-1">Artist Email <span className="text-zinc-500 font-normal text-xs ml-1">— for release status updates</span></label>
                 <input type="email" value={artistEmail} onChange={e => setArtistEmail(e.target.value)}
                   placeholder="artist@email.com" className="input-dark w-full px-4 py-3 rounded-xl" />
                 <p className="text-xs text-zinc-600 mt-1.5">We'll email you when your release status changes. Optional but recommended.</p>
               </div>
+              )}
             </div>
 
             {/* Collaborations */}

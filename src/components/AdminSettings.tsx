@@ -1005,6 +1005,15 @@ function ok(msg) {
             />
           </Section>
 
+          <Section title="Artist Info Fields" desc="Control which fields appear on the submission form">
+            <ToggleRow
+              label="Show Artist Email Field"
+              desc="Artists can enter their email to receive automatic status update emails. Disable to hide the field entirely."
+              value={settings.showArtistEmail ?? true}
+              onChange={v => set('showArtistEmail', v)}
+            />
+          </Section>
+
           <Section title="Cover Art" desc="Control the artwork fields on the form">
             <ToggleRow
               label="Allow Direct Image URL"

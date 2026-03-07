@@ -161,6 +161,7 @@ export interface AdminSettings {
   requireMixMaster: boolean;          // Require mixed/mastered credits per track
   requireCredits: boolean;            // Require producer + lyrics credits per track
   requireTikTokTimestamp: boolean;    // Require TikTok preview timestamps
+  showArtistEmail: boolean;           // Show/hide artist email field on submission form
   maxCollaborators: number;           // Max collaborators allowed (0 = unlimited)
   maxFeatures: number;                // Max featured artists (0 = unlimited)
   formFooterText: string;             // Small footer shown at bottom of form
@@ -227,6 +228,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   showArtworkPreview: true,
   requireMixMaster: false,
   requireCredits: false,
+  showArtistEmail: true,
   requireTikTokTimestamp: false,
   maxCollaborators: 0,
   maxFeatures: 0,
