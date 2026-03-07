@@ -10,6 +10,7 @@ import ReleaseDetail from './components/ReleaseDetail';
 import AdminSettingsPanel from './components/AdminSettings';
 import { ReleaseSubmission } from './types';
 import ArtistStatusPage from './components/ArtistStatusPage';
+import NotificationCenter from './components/NotificationCenter';
 
 type AdminView = 'dashboard' | 'settings' | 'detail';
 
@@ -73,6 +74,14 @@ function App() {
     setRefreshKey(k => k + 1);
   };
 
+  const handleNavigateToRelease = async (releaseId: string) => {
+    const { getSubmissions } = await import('./store');
+    const all = await getSubmissions();
+    const found = all.find(r => r.id === releaseId);
+    if (found) { setSelectedRelease(found); setAdminView('detail'); }
+    else { setAdminView('dashboard'); setRefreshKey(k => k + 1); }
+  };
+
   // Show nothing until branding is loaded to avoid flash
   if (!brandingLoaded && !isAdmin) {
     return (
@@ -112,10 +121,11 @@ function App() {
             {adminSettings.companyLogo && (
               <img src={adminSettings.companyLogo} alt={adminSettings.companyName} className="h-10 w-10 object-contain rounded-lg" />
             )}
-            <div>
-              <h1 className="font-bold text-sm">{adminSettings.companyName}</h1>
+            <div className="flex-1 min-w-0">
+              <h1 className="font-bold text-sm truncate">{adminSettings.companyName}</h1>
               <p className="text-xs text-zinc-500">Admin Panel</p>
             </div>
+            <NotificationCenter onNavigateToRelease={handleNavigateToRelease} />
           </div>
         </div>
 
@@ -161,7 +171,9 @@ function App() {
             <img src={adminSettings.companyLogo} alt={adminSettings.companyName} className="h-8 w-8 object-contain rounded-lg" />
           )}
           <span className="font-bold text-sm">{adminSettings.companyName}</span>
-          <span className="ml-auto text-xs text-zinc-600">Admin</span>
+          <div className="ml-auto">
+            <NotificationCenter onNavigateToRelease={handleNavigateToRelease} />
+          </div>
         </div>
       </div>
 

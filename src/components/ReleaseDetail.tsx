@@ -76,14 +76,19 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
   const [tracks, setTracks] = useState<Track[]>([...initialRelease.tracks]);
   const [upc, setUpc] = useState(initialRelease.upc || '');
   const [priority, setPriority] = useState<ReleasePriority>(initialRelease.priority || 'normal');
-  const [checklist, setChecklist] = useState<ChecklistItem[]>(initialRelease.checklist || [
+  const DEFAULT_CHECKLIST: ChecklistItem[] = [
     { id: '1', label: 'Cover art approved (3000×3000px)', done: false },
     { id: '2', label: 'WAV files received', done: false },
     { id: '3', label: 'Credits verified', done: false },
     { id: '4', label: 'Metadata complete', done: false },
-    { id: '5', label: 'Rights confirmed', done: initialRelease.rightsConfirmed },
-    { id: '6', label: 'Distributed to platforms', done: false },
-  ]);
+    { id: '5', label: 'ISRC codes assigned', done: false },
+    { id: '6', label: 'Rights confirmed', done: initialRelease.rightsConfirmed },
+    { id: '7', label: 'Sent to distributor', done: false },
+    { id: '8', label: 'Distributed to platforms', done: false },
+  ];
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(
+    initialRelease.checklist?.length ? initialRelease.checklist : DEFAULT_CHECKLIST
+  );
   const [newCheckItem, setNewCheckItem] = useState('');
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
