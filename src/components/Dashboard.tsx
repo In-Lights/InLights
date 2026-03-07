@@ -54,19 +54,11 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
 
-  const allFilteredIds = useMemo(() => filtered?.map(r => r.id) ?? [], []);
-  const allSelected = selected.size > 0 && filtered.length > 0 && filtered.every(r => selected.has(r.id));
-
   const toggleSelect = (id: string) => setSelected(prev => {
     const next = new Set(prev);
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-
-  const toggleSelectAll = () => {
-    if (allSelected) setSelected(new Set());
-    else setSelected(new Set(filtered.map(r => r.id)));
-  };
 
   const handleBulkStatus = async (status: ReleaseStatus) => {
     if (selected.size === 0) return;
@@ -120,6 +112,12 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
     else result.sort((a, b) => a.releaseTitle.localeCompare(b.releaseTitle));
     return result;
   }, [submissions, statusFilter, search, sortBy]);
+
+  const allSelected = selected.size > 0 && filtered.length > 0 && filtered.every(r => selected.has(r.id));
+  const toggleSelectAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(filtered.map(r => r.id)));
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this submission?')) return;

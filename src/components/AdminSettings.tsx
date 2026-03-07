@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
 import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook } from '../store';
-import { applyAccentColor } from '../App';
+import { applyAccentColor } from '../utils/accentColor';
 
 interface Props { onSaved: () => void; }
 
