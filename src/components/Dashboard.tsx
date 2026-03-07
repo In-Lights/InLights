@@ -18,6 +18,31 @@ function driveThumbnail(url: string, size = 300): string | null {
   return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${size}` : null;
 }
 
+// Best available thumbnail: direct image URL → Drive thumbnail → null
+function artworkSrc(release: ReleaseSubmission): string | null {
+  if (release.coverArtImageUrl) return release.coverArtImageUrl;
+  return driveThumbnail(release.coverArtDriveLink);
+}
+
+// "Artist1, Artist2" — main artist + collaborators
+function formatArtists(release: ReleaseSubmission): string {
+  const names = [release.mainArtist, ...release.collaborations.map(c => c.name).filter(Boolean)];
+  return names.join(', ');
+}
+
+// "Track Title (feat. X, Y)" for single tracks, or just the release title for multi-track
+function formatTitle(release: ReleaseSubmission): string {
+  const featureNames = release.features.map(f => f.name).filter(Boolean);
+  const featSuffix = featureNames.length > 0 ? ` (feat. ${featureNames.join(', ')})` : '';
+
+  if (release.releaseType === 'single' && release.tracks.length === 1) {
+    return release.tracks[0]?.title
+      ? `${release.tracks[0].title}${featSuffix}`
+      : `${release.releaseTitle}${featSuffix}`;
+  }
+  return `${release.releaseTitle}${featSuffix}`;
+}
+
 export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Props) {
   const [statusFilter, setStatusFilter] = useState<ReleaseStatus | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -175,8 +200,8 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
             <div key={release.id} className="glass-card rounded-xl p-4 flex items-center gap-4 hover:bg-white/[0.03] transition-all">
               {/* Artwork thumbnail */}
               <div className="w-12 h-12 rounded-lg flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/5">
-                {driveThumbnail(release.coverArtDriveLink) ? (
-                  <img src={driveThumbnail(release.coverArtDriveLink)!} alt="" className="w-full h-full object-cover"
+                {artworkSrc(release) ? (
+                  <img src={artworkSrc(release)!} alt="" className="w-full h-full object-cover"
                     onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">
@@ -192,10 +217,8 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
                     <span className="text-xs bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded">E</span>
                   )}
                 </div>
-                <p className="font-semibold truncate">{release.releaseTitle}</p>
-                <p className="text-sm text-zinc-400 truncate">
-                  {[release.mainArtist, ...release.collaborations.map(c => c.name).filter(Boolean)].join(', ')}
-                </p>
+                <p className="font-semibold truncate">{formatTitle(release)}</p>
+                <p className="text-sm text-zinc-400 truncate">{formatArtists(release)}</p>
                 <p className="text-xs text-zinc-600 mt-1">{release.genre} • {release.releaseDate} • {release.tracks.length} track{release.tracks.length !== 1 ? 's' : ''}</p>
               </div>
 
