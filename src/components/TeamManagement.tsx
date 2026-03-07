@@ -44,7 +44,8 @@ export default function TeamManagement() {
 
   const session = getAdminSession();
   const currentRole = session.role;
-  const canManage = currentRole === 'owner' || currentRole === 'admin' || !currentRole; // legacy logins have no role
+  const canManage = currentRole === 'owner' || !currentRole; // only owners (or legacy) can add/delete/change roles
+  const canEditOwn = currentRole === 'admin'; // admins can only edit their own password
 
   useEffect(() => {
     load();
@@ -315,7 +316,7 @@ export default function TeamManagement() {
                         </button>
                       </div>
                     )}
-                    {canManage && isSelf && (
+                    {(canManage || canEditOwn) && isSelf && (
                       <button onClick={() => startEdit(user)}
                         className="p-2 rounded-lg text-zinc-600 hover:text-white hover:bg-white/5 transition-all" title="Edit your account">
                         <KeyRound className="w-3.5 h-3.5" />

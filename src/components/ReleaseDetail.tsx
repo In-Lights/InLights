@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square, ShieldOff } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus, ReleaseType, Track, Collaborator, RELEASE_TYPE_LIMITS, GENRES, ReleasePriority, ChecklistItem } from '../types';
 import { updateSubmission } from '../store';
 import { StatusBadge, ReleaseTypeBadge } from './ui/Badge';
 import Lightbox from './Lightbox';
 import AudioPlayer from './AudioPlayer';
+import { usePermissions } from '../utils/permissions';
 
 interface Props {
   release: ReleaseSubmission;
@@ -56,6 +57,7 @@ function formatDisplayTitle(
 }
 
 export default function ReleaseDetail({ release: initialRelease, onBack }: Props) {
+  const { role, can } = usePermissions();
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -182,11 +184,17 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
           <ArrowLeft className="w-4 h-4" /> Back to Dashboard
         </button>
         <div className="flex items-center gap-3">
-          {!editing ? (
+          {role === 'reviewer' && (
+            <span className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 rounded-xl">
+              <ShieldOff className="w-3.5 h-3.5" /> Read-only
+            </span>
+          )}
+          {can.canEditRelease && !editing && (
             <button onClick={() => setEditing(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600/20 text-violet-400 hover:bg-violet-600/30 transition-all text-sm font-medium">
               <Pencil className="w-4 h-4" /> Edit Release
             </button>
-          ) : (
+          )}
+          {can.canEditRelease && editing && (
             <>
               <button onClick={handleCancel} disabled={saving} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-zinc-700 text-zinc-400 hover:text-white transition-all text-sm">
                 <X className="w-4 h-4" /> Cancel
@@ -572,17 +580,21 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
               </div>
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Status</label>
-                <select
-                  value={status}
-                  onChange={e => setStatus(e.target.value as ReleaseStatus)}
-                  className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
-                >
-                  <option value="pending">⏳ Pending</option>
-                  <option value="approved">✅ Approved</option>
-                  <option value="scheduled">📅 Scheduled</option>
-                  <option value="released">🎵 Released</option>
-                  <option value="rejected">❌ Rejected</option>
-                </select>
+                {can.canChangeStatus ? (
+                  <select
+                    value={status}
+                    onChange={e => setStatus(e.target.value as ReleaseStatus)}
+                    className="input-dark w-full px-3 py-2.5 rounded-lg text-sm"
+                  >
+                    <option value="pending">⏳ Pending</option>
+                    <option value="approved">✅ Approved</option>
+                    <option value="scheduled">📅 Scheduled</option>
+                    <option value="released">🎵 Released</option>
+                    <option value="rejected">❌ Rejected</option>
+                  </select>
+                ) : (
+                  <div className="input-dark w-full px-3 py-2.5 rounded-lg text-sm text-zinc-400 capitalize">{status}</div>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Label Notes</label>
@@ -594,13 +606,16 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                   className="input-dark w-full px-3 py-2.5 rounded-lg text-sm resize-none"
                 />
               </div>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="btn-primary w-full py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm disabled:opacity-60"
-              >
-                {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : <><Save className="w-4 h-4" />{saved ? '✓ Saved!' : 'Save Changes'}</>}
-              </button>
+              {/* Save button — reviewers can only save label notes */}
+              {(can.canEditRelease || can.canAddNotes) && (
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="btn-primary w-full py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm disabled:opacity-60"
+                >
+                  {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Saving...</> : <><Save className="w-4 h-4" />{saved ? '✓ Saved!' : (role === 'reviewer' ? 'Save Note' : 'Save Changes')}</>}
+                </button>
+              )}
             </div>
           </div>
 

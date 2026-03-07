@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown } from 'lucide-react';
+import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown, ShieldOff } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus } from '../types';
-import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV, updateSubmission } from '../store';
+import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV } from '../store';
 import { ReleaseTypeBadge } from './ui/Badge';
 import ExportPDFButton from './ExportPDF';
+import { usePermissions } from '../utils/permissions';
 
 interface Props {
   onViewRelease: (release: ReleaseSubmission) => void;
@@ -45,6 +46,7 @@ function formatTitle(release: ReleaseSubmission): string {
 }
 
 export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Props) {
+  const { role, can } = usePermissions();
   const [statusFilter, setStatusFilter] = useState<ReleaseStatus | 'all'>('all');
   const [search, setSearch] = useState('');
   const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'title'>('newest');
@@ -215,12 +217,13 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
           </select>
           <button
             onClick={() => exportToCSV(filtered)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white text-sm transition-all"
+            disabled={!can.canExport}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white text-sm transition-all disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <Download className="w-4 h-4" />
             <span className="hidden sm:inline">CSV</span>
           </button>
-          <ExportPDFButton releases={filtered} />
+          {can.canExport && <ExportPDFButton releases={filtered} />}
           <button
             onClick={onRefresh}
             className="p-2.5 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white transition-all"
@@ -231,8 +234,16 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
         </div>
       </div>
 
+      {/* Reviewer read-only notice */}
+      {role === 'reviewer' && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-500/8 border border-blue-500/20 text-sm text-blue-300">
+          <ShieldOff className="w-4 h-4 flex-shrink-0" />
+          You have <strong>read-only</strong> access. Contact an owner or admin to make changes.
+        </div>
+      )}
+
       {/* Bulk Actions Bar */}
-      {selected.size > 0 && (
+      {selected.size > 0 && can.canBulkAction && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-violet-500/10 border border-violet-500/25 fade-in flex-wrap">
           <span className="text-sm font-medium text-violet-300">{selected.size} selected</span>
           <div className="flex items-center gap-2 flex-wrap flex-1">
@@ -264,20 +275,24 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
         </div>
       ) : (
         <div className="space-y-3">
-          {/* Select all row */}
-          <div className="flex items-center gap-3 px-1">
-            <button onClick={toggleSelectAll} className="p-1 text-zinc-500 hover:text-white transition-colors">
-              {allSelected ? <CheckSquare className="w-4 h-4 accent-text" /> : <Square className="w-4 h-4" />}
-            </button>
-            <span className="text-xs text-zinc-600">{allSelected ? 'Deselect all' : `Select all (${filtered.length})`}</span>
-          </div>
+          {/* Select all row — only for users who can bulk act */}
+          {can.canBulkAction && (
+            <div className="flex items-center gap-3 px-1">
+              <button onClick={toggleSelectAll} className="p-1 text-zinc-500 hover:text-white transition-colors">
+                {allSelected ? <CheckSquare className="w-4 h-4 accent-text" /> : <Square className="w-4 h-4" />}
+              </button>
+              <span className="text-xs text-zinc-600">{allSelected ? 'Deselect all' : `Select all (${filtered.length})`}</span>
+            </div>
+          )}
 
           {filtered.map(release => (
             <div key={release.id} className={`glass-card rounded-xl p-4 flex items-center gap-3 hover:bg-white/[0.03] transition-all ${selected.has(release.id) ? 'border border-violet-500/30 bg-violet-500/[0.04]' : ''}`}>
-              {/* Checkbox */}
-              <button onClick={() => toggleSelect(release.id)} className="p-1 text-zinc-600 hover:text-white transition-colors flex-shrink-0">
-                {selected.has(release.id) ? <CheckSquare className="w-4 h-4 accent-text" /> : <Square className="w-4 h-4" />}
-              </button>
+              {/* Checkbox — only for bulk-action users */}
+              {can.canBulkAction && (
+                <button onClick={() => toggleSelect(release.id)} className="p-1 text-zinc-600 hover:text-white transition-colors flex-shrink-0">
+                  {selected.has(release.id) ? <CheckSquare className="w-4 h-4 accent-text" /> : <Square className="w-4 h-4" />}
+                </button>
+              )}
               {/* Artwork thumbnail */}
               <div className="w-12 h-12 rounded-lg flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/5">
                 {artworkSrc(release) ? (
@@ -308,18 +323,23 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
-                <select
-                  value={release.status}
-                  onChange={e => handleStatusChange(release.id, e.target.value as ReleaseStatus)}
-                  disabled={actionLoading === release.id + release.status}
-                  className="input-dark px-2 py-1.5 rounded-lg text-xs appearance-none"
-                >
-                  <option value="pending">Pending</option>
-                  <option value="approved">Approved</option>
-                  <option value="scheduled">Scheduled</option>
-                  <option value="released">Released</option>
-                  <option value="rejected">Rejected</option>
-                </select>
+                {/* Status dropdown — admins/owners only; reviewers see a static badge */}
+                {can.canChangeStatus ? (
+                  <select
+                    value={release.status}
+                    onChange={e => handleStatusChange(release.id, e.target.value as ReleaseStatus)}
+                    disabled={actionLoading === release.id + release.status}
+                    className="input-dark px-2 py-1.5 rounded-lg text-xs appearance-none"
+                  >
+                    <option value="pending">Pending</option>
+                    <option value="approved">Approved</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="released">Released</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                ) : (
+                  <span className="px-2 py-1.5 rounded-lg text-xs border border-white/10 text-zinc-400 capitalize">{release.status}</span>
+                )}
 
                 <button
                   onClick={() => onViewRelease(release)}
@@ -329,14 +349,17 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
                   <Eye className="w-4 h-4" />
                 </button>
 
-                <button
-                  onClick={() => handleDelete(release.id)}
-                  disabled={actionLoading === release.id}
-                  className="p-2 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
-                  title="Delete"
-                >
-                  {actionLoading === release.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                </button>
+                {/* Delete — admins/owners only */}
+                {can.canDelete && (
+                  <button
+                    onClick={() => handleDelete(release.id)}
+                    disabled={actionLoading === release.id}
+                    className="p-2 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50"
+                    title="Delete"
+                  >
+                    {actionLoading === release.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                  </button>
+                )}
               </div>
             </div>
           ))}

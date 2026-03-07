@@ -3,6 +3,7 @@ import { LayoutDashboard, Settings, LogOut, Music2 } from 'lucide-react';
 import { AdminSettings, DEFAULT_ADMIN_SETTINGS } from './types';
 import { fetchPublicBranding, getAdminSettings, isAdminLoggedIn, logoutAdmin } from './store';
 import { applyAccentColor } from './utils/accentColor';
+import { usePermissions } from './utils/permissions';
 import SubmissionForm from './components/SubmissionForm';
 import AdminLogin from './components/AdminLogin';
 import Dashboard from './components/Dashboard';
@@ -15,6 +16,7 @@ import NotificationCenter from './components/NotificationCenter';
 type AdminView = 'dashboard' | 'settings' | 'detail';
 
 function App() {
+  const { can } = usePermissions();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isStatus, setIsStatus] = useState(false);
   const [loggedIn, setLoggedIn] = useState(isAdminLoggedIn());
@@ -150,14 +152,16 @@ function App() {
           >
             <LayoutDashboard className="w-4 h-4" /> Releases
           </button>
-          <button
-            onClick={() => { setAdminView('settings'); setSelectedRelease(null); }}
-            className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              adminView === 'settings' ? 'bg-violet-500/10 text-violet-400' : 'text-zinc-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Settings className="w-4 h-4" /> Settings
-          </button>
+          {can.canAccessSettings && (
+            <button
+              onClick={() => { setAdminView('settings'); setSelectedRelease(null); }}
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                adminView === 'settings' ? 'bg-violet-500/10 text-violet-400' : 'text-zinc-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Settings className="w-4 h-4" /> Settings
+            </button>
+          )}
         </nav>
 
         <div className="p-3 border-t border-white/5">
@@ -205,7 +209,7 @@ function App() {
               onBack={() => { setAdminView('dashboard'); setSelectedRelease(null); setRefreshKey(k => k + 1); }}
             />
           )}
-          {adminView === 'settings' && (
+          {adminView === 'settings' && can.canAccessSettings && (
             <AdminSettingsPanel
               onSaved={handleSettingsSaved}
             />
@@ -231,15 +235,17 @@ function App() {
             <span className="text-[10px] font-medium">Releases</span>
           </button>
 
-          <button
-            onClick={() => { setAdminView('settings'); setSelectedRelease(null); }}
-            className={`flex flex-col items-center gap-1 px-5 py-2 rounded-xl transition-all ${
-              adminView === 'settings' ? 'text-white' : 'text-zinc-500'
-            }`}
-          >
-            <Settings className="w-5 h-5" />
-            <span className="text-[10px] font-medium">Settings</span>
-          </button>
+          {can.canAccessSettings && (
+            <button
+              onClick={() => { setAdminView('settings'); setSelectedRelease(null); }}
+              className={`flex flex-col items-center gap-1 px-5 py-2 rounded-xl transition-all ${
+                adminView === 'settings' ? 'text-white' : 'text-zinc-500'
+              }`}
+            >
+              <Settings className="w-5 h-5" />
+              <span className="text-[10px] font-medium">Settings</span>
+            </button>
+          )}
 
           <a
             href="/"
