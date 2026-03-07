@@ -85,19 +85,23 @@ ${lyrics ? `\nLYRICS EXCERPT (first track):\n${lyrics.slice(0, 800)}` : ''}
 Write only the pitch text, ready to paste into Spotify for Artists. No headers or labels.`;
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+      const res = await fetch(`${supabaseUrl}/functions/v1/generate-pitch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{ role: 'user', content: prompt }],
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
-      const text = data.content?.map((c: { type: string; text?: string }) => c.type === 'text' ? c.text : '').join('') || '';
-      if (text) {
-        setPitch(text.trim());
+      if (data.error) {
+        setError(data.error.includes('ANTHROPIC_API_KEY') 
+          ? 'Anthropic API key not set. Run: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...'
+          : data.error);
+      } else if (data.pitch) {
+        setPitch(data.pitch);
       } else {
         setError('Failed to generate pitch. Please try again.');
       }

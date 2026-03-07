@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square, ShieldOff, MessageSquare, ChevronDown } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square, ShieldOff, MessageSquare, ChevronDown, Calendar } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus, ReleaseType, Track, Collaborator, RELEASE_TYPE_LIMITS, GENRES, ReleasePriority, ChecklistItem } from '../types';
 import { updateSubmission } from '../store';
 import { StatusBadge, ReleaseTypeBadge } from './ui/Badge';
@@ -8,6 +8,17 @@ import AudioPlayer from './AudioPlayer';
 import { usePermissions } from '../utils/permissions';
 import InternalComments from './InternalComments';
 import SpotifyPitchGenerator from './SpotifyPitchGenerator';
+
+function fmtDate(s: string): string {
+  if (!s) return '';
+  const [y, m, d] = s.split('-');
+  const mo = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${mo[+m-1]} ${+d}, ${y}`;
+}
+function daysUntil(s: string): number {
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.round((new Date(s + 'T00:00:00').getTime() - t.getTime()) / 86400000);
+}
 
 interface Props {
   release: ReleaseSubmission;
@@ -329,7 +340,17 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-zinc-500 mb-1">Release Date</label>
-                    <input type="date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-sm" />
+                    <div className="relative">
+                      <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 pointer-events-none" />
+                      <input type="date" value={releaseDate} onChange={e => setReleaseDate(e.target.value)} className="input-dark w-full pl-10 pr-4 py-2 rounded-lg text-sm" />
+                    </div>
+                    {releaseDate && (
+                      <p className="text-xs text-violet-400 mt-1 font-medium">
+                        {fmtDate(releaseDate)}
+                        {' · '}
+                        {daysUntil(releaseDate) === 0 ? 'Today' : daysUntil(releaseDate) > 0 ? `${daysUntil(releaseDate)} days away` : `${Math.abs(daysUntil(releaseDate))} days ago`}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs text-zinc-500 mb-1">Genre</label>
@@ -359,7 +380,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
               </div>
             ) : (
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><span className="text-zinc-500">Release Date</span><p className="font-medium">{releaseDate}</p></div>
+                <div><span className="text-zinc-500">Release Date</span><p className="font-medium">{fmtDate(releaseDate) || releaseDate}</p></div>
                 <div><span className="text-zinc-500">Genre</span><p className="font-medium">{genre}</p></div>
                 <div><span className="text-zinc-500">Explicit</span><p className="font-medium">{explicitContent ? 'Yes' : 'No'}</p></div>
                 <div><span className="text-zinc-500">Cover Art</span><div className="mt-1">{renderLink(coverArtDriveLink, 'View Cover Art')}</div></div>
@@ -498,15 +519,9 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                         <label className="block text-xs text-zinc-600 mb-1">WAV — Google Drive Link</label>
                         <input type="url" value={track.wavDriveLink} onChange={e => updateTrack(i, { wavDriveLink: e.target.value })} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://drive.google.com/..." />
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs text-zinc-600 mb-1">Lyrics Drive Link</label>
-                          <input type="url" value={track.lyricsDriveLink || ''} onChange={e => updateTrack(i, { lyricsDriveLink: e.target.value })} className="input-dark w-full px-3 py-2 rounded-lg text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-xs text-zinc-600 mb-1">Lyrics Google Docs</label>
-                          <input type="url" value={track.lyricsGoogleDocsLink || ''} onChange={e => updateTrack(i, { lyricsGoogleDocsLink: e.target.value })} className="input-dark w-full px-3 py-2 rounded-lg text-sm" />
-                        </div>
+                      <div>
+                        <label className="block text-xs text-zinc-600 mb-1">Lyrics — Google Docs Link</label>
+                        <input type="url" value={track.lyricsGoogleDocsLink || ''} onChange={e => updateTrack(i, { lyricsGoogleDocsLink: e.target.value })} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://docs.google.com/..." />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <input type="text" value={track.producedBy} onChange={e => updateTrack(i, { producedBy: e.target.value })} placeholder="Produced by" className="input-dark px-3 py-2 rounded-lg text-sm" />
@@ -700,7 +715,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">Release</span>
-                <span className="font-medium">{releaseDate}</span>
+                <span className="font-medium">{fmtDate(releaseDate) || releaseDate}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-zinc-500">Rights</span>

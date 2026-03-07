@@ -365,7 +365,7 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
                     </span>
                   )}
                 </div>
-                <p className="font-semibold truncate">{formatTitle(release)}</p>
+                <button onClick={() => onViewRelease(release)} className="font-semibold truncate text-left hover:text-violet-300 transition-colors">{formatTitle(release)}</button>
                 <p className="text-sm text-zinc-400 truncate">{formatArtists(release)}</p>
                 <p className="text-xs text-zinc-600 mt-1">{release.genre} • {release.releaseDate} • {release.tracks.length} track{release.tracks.length !== 1 ? 's' : ''}</p>
               </div>

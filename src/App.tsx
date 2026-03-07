@@ -93,8 +93,19 @@ function App() {
     const { getSubmissions } = await import('./store');
     const all = await getSubmissions();
     const found = all.find(r => r.id === releaseId);
-    if (found) { setSelectedRelease(found); setAdminView('detail'); }
-    else { setAdminView('dashboard'); setRefreshKey(k => k + 1); }
+    if (found) {
+      // Reset first so React re-renders even if already in detail view
+      setSelectedRelease(null);
+      setAdminView('dashboard');
+      // Small tick to let state flush before switching
+      setTimeout(() => {
+        setSelectedRelease(found);
+        setAdminView('detail');
+      }, 0);
+    } else {
+      setAdminView('dashboard');
+      setRefreshKey(k => k + 1);
+    }
   };
 
   // Show nothing until branding is loaded to avoid flash
