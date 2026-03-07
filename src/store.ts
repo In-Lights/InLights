@@ -117,6 +117,11 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     labelEmail: data.label_email ?? '',
     labelInstagram: data.label_instagram ?? '',
     labelWebsite: data.label_website ?? '',
+    resendApiKey: data.resend_api_key ?? '',
+    emailFromName: data.email_from_name ?? DEFAULT_ADMIN_SETTINGS.emailFromName,
+    emailFromAddress: data.email_from_address ?? '',
+    emailNotifyOnSubmission: data.email_notify_on_submission ?? false,
+    emailNotifyArtistOnStatus: data.email_notify_artist_on_status ?? false,
   };
 }
 
@@ -169,6 +174,11 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       label_email: settings.labelEmail || null,
       label_instagram: settings.labelInstagram || null,
       label_website: settings.labelWebsite || null,
+      resend_api_key: settings.resendApiKey || null,
+      email_from_name: settings.emailFromName || null,
+      email_from_address: settings.emailFromAddress || null,
+      email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
+      email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
     })
     .eq('settings_id', 1);
 
@@ -265,6 +275,7 @@ function rowToRelease(row: Record<string, unknown>): ReleaseSubmission {
     driveFolderLink: (row.drive_folder_link as string) ?? undefined,
     rightsConfirmed: row.rights_confirmed as boolean,
     labelNotes: (row.label_notes as string) ?? undefined,
+    artistEmail: (row.artist_email as string) ?? undefined,
     upc: (row.upc as string) ?? undefined,
     priority: (row.priority as ReleaseSubmission['priority']) ?? 'normal',
     checklist: (row.checklist as ReleaseSubmission['checklist']) ?? [],
@@ -290,6 +301,7 @@ function releaseToRow(release: Partial<ReleaseSubmission> & { id?: string }) {
   if (release.driveFolderLink !== undefined) row.drive_folder_link = release.driveFolderLink;
   if (release.rightsConfirmed !== undefined) row.rights_confirmed = release.rightsConfirmed;
   if (release.labelNotes !== undefined) row.label_notes = release.labelNotes;
+  if (release.artistEmail !== undefined) row.artist_email = release.artistEmail;
   if (release.upc !== undefined) row.upc = release.upc;
   if (release.priority !== undefined) row.priority = release.priority;
   if (release.checklist !== undefined) row.checklist = release.checklist;
@@ -324,7 +336,7 @@ export async function addSubmission(
   const { error } = await supabase.from('releases').insert(row);
   if (error) throw new Error(error.message);
   const { data } = await supabase.from('releases').select().eq('id', id).single();
-  if (data) { sendToGoogleSheets(rowToRelease(data)); sendDiscordNotification(rowToRelease(data)); }
+  if (data) { const r = rowToRelease(data); sendToGoogleSheets(r); sendDiscordNotification(r); sendSubmissionNotification(r); }
   await logActivity('Submitted release', `${release.mainArtist} — ${release.releaseTitle}`, id, { genre: release.genre, type: release.releaseType });
   return id;
 }
@@ -347,6 +359,14 @@ export async function updateSubmissionStatus(
 ): Promise<void> {
   await updateSubmission(id, { status });
   await logActivity(`Status → ${status}`, label || id, id, { status });
+  // Fire status email if artist email is on file
+  try {
+    const { data } = await supabase.from('releases').select('*').eq('id', id).single();
+    if (data?.artist_email) {
+      const release = rowToRelease(data);
+      await sendStatusNotification(release, data.artist_email as string);
+    }
+  } catch { /* non-blocking */ }
 }
 
 export async function deleteSubmission(id: string, label?: string): Promise<void> {
@@ -461,7 +481,8 @@ export async function checkForDuplicates(
   if (!data) return [];
   return data
     .filter(r => r.id !== excludeId)
-    .filter(r => isSimilar(r.main_artist, artist) && isSimilar(r.release_title, title))
+    .filter(r => isSimilar(r.main_artist, artist)) // same artist first
+    .filter(r => isSimilar(r.release_title, title)) // then same title under that artist
     .map(r => ({
       id: r.id,
       mainArtist: r.main_artist,
@@ -765,6 +786,149 @@ export async function testDiscordWebhook(webhookUrl: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// ============================================================
+// Email (Resend API)
+// ============================================================
+
+function buildSubmissionEmailHtml(release: ReleaseSubmission, settings: AdminSettings): string {
+  const rows = [
+    ['Artist', release.mainArtist],
+    ['Type', release.releaseType.toUpperCase()],
+    ['Genre', release.genre || '—'],
+    ['Release Date', release.releaseDate || 'TBD'],
+    ['Tracks', String(release.tracks.length)],
+    ['Submission ID', release.id],
+  ].map(([k, v]) => `
+    <tr style="border-bottom:1px solid #27272a;">
+      <td style="padding:12px 16px;font-size:12px;color:#71717a;width:40%;">${k}</td>
+      <td style="padding:12px 16px;font-size:13px;color:#e4e4e7;font-weight:500;">${v}</td>
+    </tr>`).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#09090b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e4e4e7;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 20px;"><tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+      <tr><td style="background:#18181b;border-radius:16px 16px 0 0;padding:32px;border-bottom:1px solid #27272a;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td><img src="${settings.companyLogo}" width="40" height="40" style="border-radius:8px;" alt="${settings.companyName}"></td>
+          <td style="padding-left:12px;"><span style="font-size:18px;font-weight:700;color:#fff;">${settings.companyName}</span><br><span style="font-size:12px;color:#71717a;">Release Management</span></td>
+        </tr></table>
+      </td></tr>
+      <tr><td style="background:#18181b;padding:32px;">
+        <p style="margin:0 0 8px;font-size:12px;color:#a1a1aa;text-transform:uppercase;letter-spacing:1px;">New Submission</p>
+        <h1 style="margin:0 0 24px;font-size:24px;font-weight:700;color:#fff;">${release.releaseTitle}</h1>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;border-radius:12px;overflow:hidden;margin-bottom:24px;">${rows}</table>
+        <a href="#admin" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-size:14px;font-weight:600;">View in Admin Panel →</a>
+      </td></tr>
+      <tr><td style="background:#09090b;border-radius:0 0 16px 16px;padding:20px 32px;border-top:1px solid #27272a;">
+        <p style="margin:0;font-size:12px;color:#52525b;">Automated notification from ${settings.companyName}.</p>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+}
+
+function buildStatusEmailHtml(release: ReleaseSubmission, settings: AdminSettings): string {
+  const cfg: Record<string, { color: string; bg: string; icon: string; headline: string; body: string }> = {
+    approved:  { color:'#10b981', bg:'#052e16', icon:'✅', headline:'Your release has been approved!',
+      body:`Great news! <strong>${release.releaseTitle}</strong> has been approved by our team. We'll be in touch with next steps.` },
+    rejected:  { color:'#ef4444', bg:'#2d0a0a', icon:'❌', headline:'Update on your submission',
+      body:`Thank you for submitting <strong>${release.releaseTitle}</strong>. After careful review, we're unable to move forward with this release at this time.${release.labelNotes ? `<br><br><strong>Label notes:</strong> ${release.labelNotes}` : ''}` },
+    scheduled: { color:'#3b82f6', bg:'#0c1a2e', icon:'📅', headline:'Your release is scheduled!',
+      body:`<strong>${release.releaseTitle}</strong> is scheduled for <strong>${release.releaseDate || 'a date TBC'}</strong>. We'll keep you updated as the date approaches.` },
+    released:  { color:'#8b5cf6', bg:'#1a0a2e', icon:'🎵', headline:"Your release is live!",
+      body:`Congratulations! <strong>${release.releaseTitle}</strong> is now live. Thank you for being part of ${settings.companyName}.` },
+    pending:   { color:'#f59e0b', bg:'#1c1004', icon:'⏳', headline:'Submission received',
+      body:`We've received <strong>${release.releaseTitle}</strong> and it's currently under review. We'll notify you once a decision has been made.` },
+  };
+  const s = cfg[release.status] || cfg.pending;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#09090b;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e4e4e7;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;padding:40px 20px;"><tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+      <tr><td style="background:#18181b;border-radius:16px 16px 0 0;padding:32px;border-bottom:1px solid #27272a;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td><img src="${settings.companyLogo}" width="40" height="40" style="border-radius:8px;" alt="${settings.companyName}"></td>
+          <td style="padding-left:12px;"><span style="font-size:18px;font-weight:700;color:#fff;">${settings.companyName}</span><br><span style="font-size:12px;color:#71717a;">Release Management</span></td>
+        </tr></table>
+      </td></tr>
+      <tr><td style="background:${s.bg};padding:24px 32px;border-bottom:1px solid #27272a;">
+        <table width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td style="font-size:32px;width:48px;">${s.icon}</td>
+          <td style="padding-left:16px;">
+            <p style="margin:0 0 4px;font-size:18px;font-weight:700;color:${s.color};">${s.headline}</p>
+            <p style="margin:0;font-size:12px;color:#71717a;">Submission ID: ${release.id}</p>
+          </td>
+        </tr></table>
+      </td></tr>
+      <tr><td style="background:#18181b;padding:32px;">
+        <p style="margin:0 0 24px;font-size:15px;color:#a1a1aa;line-height:1.7;">Hi <strong style="color:#fff;">${release.mainArtist}</strong>,<br><br>${s.body}</p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#09090b;border-radius:12px;overflow:hidden;margin-bottom:24px;">
+          <tr style="border-bottom:1px solid #27272a;"><td style="padding:12px 16px;font-size:12px;color:#71717a;">Release</td><td style="padding:12px 16px;font-size:13px;color:#e4e4e7;font-weight:600;">${release.releaseTitle}</td></tr>
+          <tr style="border-bottom:1px solid #27272a;"><td style="padding:12px 16px;font-size:12px;color:#71717a;">Type</td><td style="padding:12px 16px;font-size:13px;color:#e4e4e7;">${release.releaseType.toUpperCase()}</td></tr>
+          <tr><td style="padding:12px 16px;font-size:12px;color:#71717a;">Status</td><td style="padding:12px 16px;font-size:13px;font-weight:700;color:${s.color};">${release.status.charAt(0).toUpperCase()+release.status.slice(1)}</td></tr>
+        </table>
+        <a href="/#status" style="display:inline-block;background:#7c3aed;color:#fff;text-decoration:none;padding:14px 28px;border-radius:10px;font-size:14px;font-weight:600;">Track Your Release →</a>
+      </td></tr>
+      <tr><td style="background:#09090b;border-radius:0 0 16px 16px;padding:20px 32px;border-top:1px solid #27272a;">
+        <p style="margin:0;font-size:12px;color:#52525b;">${settings.companyName}${settings.labelEmail ? ` • <a href="mailto:${settings.labelEmail}" style="color:#52525b;">${settings.labelEmail}</a>` : ''}${settings.labelWebsite ? ` • <a href="${settings.labelWebsite}" style="color:#52525b;">${settings.labelWebsite}</a>` : ''}</p>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+}
+
+async function sendEmail(to: string, subject: string, html: string, settings: AdminSettings): Promise<boolean> {
+  if (!settings.resendApiKey || !settings.emailFromAddress) return false;
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${settings.resendApiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: `${settings.emailFromName || settings.companyName} <${settings.emailFromAddress}>`,
+        to: [to],
+        subject,
+        html,
+      }),
+    });
+    return res.ok;
+  } catch { return false; }
+}
+
+export async function sendSubmissionNotification(release: ReleaseSubmission): Promise<void> {
+  const settings = await getAdminSettings();
+  if (!settings.emailNotifyOnSubmission || !settings.notificationEmail) return;
+  await sendEmail(
+    settings.notificationEmail,
+    `🎵 New Submission: ${release.mainArtist} — ${release.releaseTitle}`,
+    buildSubmissionEmailHtml(release, settings),
+    settings
+  );
+}
+
+export async function sendStatusNotification(release: ReleaseSubmission, artistEmail: string): Promise<void> {
+  const settings = await getAdminSettings();
+  if (!settings.emailNotifyArtistOnStatus || !artistEmail) return;
+  const subjects: Record<string, string> = {
+    approved:  `✅ Your release "${release.releaseTitle}" has been approved`,
+    rejected:  `Update on your submission: "${release.releaseTitle}"`,
+    scheduled: `📅 "${release.releaseTitle}" is scheduled!`,
+    released:  `🎵 "${release.releaseTitle}" is now live!`,
+    pending:   `We've received "${release.releaseTitle}"`,
+  };
+  await sendEmail(artistEmail, subjects[release.status] || `Update on "${release.releaseTitle}"`, buildStatusEmailHtml(release, settings), settings);
+}
+
+export async function testEmailConfig(toEmail: string): Promise<boolean> {
+  const settings = await getAdminSettings();
+  const html = `<!DOCTYPE html><html><body style="background:#09090b;font-family:sans-serif;padding:40px;color:#e4e4e7;">
+    <div style="max-width:480px;margin:0 auto;background:#18181b;border-radius:16px;padding:40px;text-align:center;">
+      <div style="font-size:52px;margin-bottom:16px;">✅</div>
+      <h2 style="color:#10b981;margin:0 0 8px;font-size:22px;">Email is working!</h2>
+      <p style="color:#71717a;margin:0;">Your ${settings.companyName} email notifications are configured correctly.</p>
+    </div></body></html>`;
+  return sendEmail(toEmail, `✅ ${settings.companyName} — Email test successful`, html, settings);
 }
 
 // ============================================================

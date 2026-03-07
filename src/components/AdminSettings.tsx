@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import {
   Save, Settings, FileText, Bell, Lock, Table, Send,
   CheckCircle2, XCircle, Loader2, Palette, ExternalLink,
-  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity, Database
+  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity, Database, Mail, Eye, EyeOff
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
-import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook, getAdminSession } from '../store';
+import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook, testEmailConfig, getAdminSession } from '../store';
 import { applyAccentColor } from '../utils/accentColor';
 import TeamManagement from './TeamManagement';
 import ActivityLog from './ActivityLog';
@@ -152,12 +152,15 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'drive' | 'discord' | 'sheets' | 'team' | 'log' | 'backup'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'email' | 'drive' | 'discord' | 'sheets' | 'team' | 'log' | 'backup'>('branding');
 
   const [testingDiscord, setTestingDiscord] = useState(false);
   const [discordResult, setDiscordResult] = useState<'success' | 'fail' | null>(null);
   const [discordError, setDiscordError] = useState('');
   const [testingSheets, setTestingSheets] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
+  const [emailTestResult, setEmailTestResult] = useState<'success' | 'fail' | null>(null);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [sheetsResult, setSheetsResult] = useState<'success' | 'fail' | null>(null);
   const [copiedAdminUrl, setCopiedAdminUrl] = useState(false);
   const [newPassword, setNewPassword] = useState('');
@@ -227,7 +230,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
   const isOwner = role === 'owner' || !role; // legacy logins treated as owner
 
   // Tabs restricted to owner only
-  const OWNER_ONLY_TABS = ['security', 'discord', 'drive', 'sheets'] as const;
+  const OWNER_ONLY_TABS = ['security', 'discord', 'drive', 'sheets', 'email'] as const;
 
   const tabs = [
     { id: 'branding' as const, label: 'Branding', icon: Palette },
@@ -236,6 +239,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
     { id: 'status' as const, label: 'Statuses', icon: Tag },
     { id: 'security' as const, label: 'Security', icon: Lock },
     { id: 'advanced' as const, label: 'Advanced', icon: Settings },
+    { id: 'email' as const, label: 'Email', icon: Mail },
     { id: 'discord' as const, label: 'Discord', icon: Bell },
     { id: 'drive' as const, label: 'Drive', icon: FolderOpen },
     { id: 'sheets' as const, label: 'Sheets', icon: Table },
@@ -564,6 +568,143 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               >
                 {copiedAdminUrl ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
               </button>
+            </div>
+          </Section>
+        </div>
+      )}
+
+      {/* ── EMAIL ── */}
+      {activeTab === 'email' && isOwner && (
+        <div className="space-y-5">
+
+          {/* Intro card */}
+          <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5 flex gap-4">
+            <Mail className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-violet-300 mb-1">Powered by Resend</p>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Get a free API key at <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">resend.com</a> — 3,000 emails/month free.
+                You'll need a verified sender domain or use <code className="bg-black/30 px-1 rounded text-violet-300">onboarding@resend.dev</code> for testing.
+              </p>
+            </div>
+          </div>
+
+          {/* API credentials */}
+          <Section title="API Credentials" desc="Connect your Resend account">
+            <Field label="Resend API Key">
+              <div className="relative">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={s.resendApiKey}
+                  onChange={e => setS(p => ({ ...p, resendApiKey: e.target.value }))}
+                  placeholder="re_xxxxxxxxxxxxxxxxxxxx"
+                  className="input-dark w-full px-4 py-2.5 rounded-xl pr-10 font-mono text-sm"
+                />
+                <button
+                  onClick={() => setShowApiKey(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </Field>
+            <Field label="From Name" hint="Display name recipients will see">
+              <input
+                type="text"
+                value={s.emailFromName}
+                onChange={e => setS(p => ({ ...p, emailFromName: e.target.value }))}
+                placeholder={s.companyName || 'In Lights'}
+                className="input-dark w-full px-4 py-2.5 rounded-xl"
+              />
+            </Field>
+            <Field label="From Email Address" hint="Must be verified in your Resend account">
+              <input
+                type="email"
+                value={s.emailFromAddress}
+                onChange={e => setS(p => ({ ...p, emailFromAddress: e.target.value }))}
+                placeholder="noreply@yourlabel.com"
+                className="input-dark w-full px-4 py-2.5 rounded-xl"
+              />
+            </Field>
+          </Section>
+
+          {/* Notification toggles */}
+          <Section title="Notifications" desc="Choose what triggers an email">
+            <div className="space-y-3">
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <div className="relative mt-0.5">
+                  <input type="checkbox" className="sr-only peer"
+                    checked={s.emailNotifyOnSubmission}
+                    onChange={e => setS(p => ({ ...p, emailNotifyOnSubmission: e.target.checked }))} />
+                  <div className="w-10 h-5 rounded-full bg-zinc-700 peer-checked:bg-violet-600 transition-colors" />
+                  <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-zinc-200">New submission alert</p>
+                  <p className="text-xs text-zinc-500">Email <strong className="text-zinc-400">{s.notificationEmail || 'your notification address'}</strong> when an artist submits</p>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <div className="relative mt-0.5">
+                  <input type="checkbox" className="sr-only peer"
+                    checked={s.emailNotifyArtistOnStatus}
+                    onChange={e => setS(p => ({ ...p, emailNotifyArtistOnStatus: e.target.checked }))} />
+                  <div className="w-10 h-5 rounded-full bg-zinc-700 peer-checked:bg-violet-600 transition-colors" />
+                  <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-zinc-200">Artist status updates</p>
+                  <p className="text-xs text-zinc-500">Email the artist automatically when you change their release status (requires artist email at submission)</p>
+                </div>
+              </label>
+            </div>
+          </Section>
+
+          {/* Test email */}
+          <Section title="Send Test Email" desc="Verify your setup is working">
+            <div className="flex gap-3 items-center">
+              <button
+                onClick={async () => {
+                  setTestingEmail(true); setEmailTestResult(null);
+                  const ok = await testEmailConfig(s.notificationEmail || s.emailFromAddress);
+                  setEmailTestResult(ok ? 'success' : 'fail');
+                  setTestingEmail(false);
+                }}
+                disabled={testingEmail || !s.resendApiKey || !s.emailFromAddress}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-semibold transition-colors"
+              >
+                {testingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                Send Test
+              </button>
+              {emailTestResult === 'success' && (
+                <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="w-4 h-4" /> Email sent!</span>
+              )}
+              {emailTestResult === 'fail' && (
+                <span className="flex items-center gap-1.5 text-sm text-red-400"><XCircle className="w-4 h-4" /> Failed — check your API key and sender address</span>
+              )}
+            </div>
+          </Section>
+
+          {/* Template preview */}
+          <Section title="Email Templates" desc="Auto-generated based on your branding">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { icon: '📬', title: 'New Submission', desc: 'Sent to label when artist submits. Includes all release details and a link to the admin panel.' },
+                { icon: '✅', title: 'Approved', desc: 'Sent to artist when you approve their release. Upbeat tone with next steps.' },
+                { icon: '❌', title: 'Rejected', desc: 'Sent to artist on rejection. Includes your label notes if provided.' },
+                { icon: '📅', title: 'Scheduled', desc: 'Sent when a release is scheduled. Shows the confirmed drop date.' },
+                { icon: '🎵', title: 'Released', desc: 'Sent when a release goes live. Celebratory tone.' },
+                { icon: '⏳', title: 'Under Review', desc: 'Sent when status moves to pending. Sets expectation for response time.' },
+              ].map(t => (
+                <div key={t.title} className="flex gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/8">
+                  <span className="text-2xl">{t.icon}</span>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-200">{t.title}</p>
+                    <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{t.desc}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           </Section>
         </div>

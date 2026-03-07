@@ -91,6 +91,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
   const [submitError, setSubmitError] = useState('');
 
   const [mainArtist, setMainArtist] = useState('');
+  const [artistEmail, setArtistEmail] = useState('');
   const [collaborations, setCollaborations] = useState<Collaborator[]>([]);
   const [features, setFeatures] = useState<Collaborator[]>([]);
 
@@ -247,6 +248,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
         promoDriveLink: promoDriveLink || undefined,
         driveFolderLink: driveFolderLink || undefined,
         rightsConfirmed,
+        artistEmail: artistEmail.trim() || undefined,
       };
       const result = await addSubmission(data);
       setSubmissionId(result);
@@ -375,10 +377,18 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
               <p className="text-zinc-500 text-sm">Tell us about the artist(s) on this release</p>
             </div>
 
-            <div className="glass-card rounded-2xl p-6">
-              <label className="block text-sm font-semibold mb-2">Main Artist <span className="text-red-400">*</span></label>
-              <input type="text" value={mainArtist} onChange={e => { setMainArtist(e.target.value); triggerAutoSave(); }}
-                placeholder="Artist or band name" className="input-dark w-full px-4 py-3 rounded-xl" />
+            <div className="glass-card rounded-2xl p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-semibold mb-2">Main Artist <span className="text-red-400">*</span></label>
+                <input type="text" value={mainArtist} onChange={e => { setMainArtist(e.target.value); triggerAutoSave(); }}
+                  placeholder="Artist or band name" className="input-dark w-full px-4 py-3 rounded-xl" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold mb-1">Artist Email <span className="text-zinc-500 font-normal text-xs ml-1">— for release status updates</span></label>
+                <input type="email" value={artistEmail} onChange={e => setArtistEmail(e.target.value)}
+                  placeholder="artist@email.com" className="input-dark w-full px-4 py-3 rounded-xl" />
+                <p className="text-xs text-zinc-600 mt-1.5">We'll email you when your release status changes. Optional but recommended.</p>
+              </div>
             </div>
 
             {/* Collaborations */}

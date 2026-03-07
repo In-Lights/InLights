@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { LayoutDashboard, Settings, LogOut, Music2 } from 'lucide-react';
 import { AdminSettings, DEFAULT_ADMIN_SETTINGS } from './types';
-import { fetchPublicBranding, getAdminSettings, isAdminLoggedIn, logoutAdmin } from './store';
+import { fetchPublicBranding, getAdminSettings, isAdminLoggedIn, logoutAdmin, getAdminSession } from './store';
 import { applyAccentColor } from './utils/accentColor';
 import { usePermissions } from './utils/permissions';
 import SubmissionForm from './components/SubmissionForm';
@@ -137,7 +137,16 @@ function App() {
             )}
             <div className="flex-1 min-w-0">
               <h1 className="font-bold text-sm truncate">{adminSettings.companyName}</h1>
-              <p className="text-xs text-zinc-500">Admin Panel</p>
+              <p className="text-xs text-zinc-500 truncate">
+                Welcome, <span className="text-zinc-300 font-medium">{getAdminSession().username || 'Admin'}</span>
+                {getAdminSession().role && (
+                  <span className={`ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    getAdminSession().role === 'owner' ? 'bg-amber-500/15 text-amber-400' :
+                    getAdminSession().role === 'admin' ? 'bg-violet-500/15 text-violet-400' :
+                    'bg-blue-500/15 text-blue-400'
+                  }`}>{getAdminSession().role}</span>
+                )}
+              </p>
             </div>
             <NotificationCenter onNavigateToRelease={handleNavigateToRelease} />
           </div>
@@ -186,7 +195,12 @@ function App() {
           {adminSettings.companyLogo && (
             <img src={adminSettings.companyLogo} alt={adminSettings.companyName} className="h-8 w-8 object-contain rounded-lg" />
           )}
-          <span className="font-bold text-sm">{adminSettings.companyName}</span>
+          <div className="flex-1 min-w-0">
+            <span className="font-bold text-sm block truncate">{adminSettings.companyName}</span>
+            <span className="text-[11px] text-zinc-500">
+              Welcome, <span className="text-zinc-300">{getAdminSession().username || 'Admin'}</span>
+            </span>
+          </div>
           <div className="ml-auto">
             <NotificationCenter onNavigateToRelease={handleNavigateToRelease} />
           </div>

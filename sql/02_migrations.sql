@@ -118,3 +118,14 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE releases;
   END IF;
 END $$;
+
+-- v13: Email notifications + artist email
+ALTER TABLE settings
+  ADD COLUMN IF NOT EXISTS resend_api_key TEXT,
+  ADD COLUMN IF NOT EXISTS email_from_name TEXT,
+  ADD COLUMN IF NOT EXISTS email_from_address TEXT,
+  ADD COLUMN IF NOT EXISTS email_notify_on_submission BOOLEAN DEFAULT false,
+  ADD COLUMN IF NOT EXISTS email_notify_artist_on_status BOOLEAN DEFAULT false;
+
+ALTER TABLE releases
+  ADD COLUMN IF NOT EXISTS artist_email TEXT;

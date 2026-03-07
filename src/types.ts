@@ -66,6 +66,7 @@ export interface ReleaseSubmission {
   driveFolderLink?: string;
   rightsConfirmed: boolean;
   labelNotes?: string;
+  artistEmail?: string;  // stored at submission time for status notifications
   upc?: string;
   priority?: ReleasePriority;
   checklist?: ChecklistItem[];
@@ -109,6 +110,13 @@ export interface AdminSettings {
   notificationEmail: string;
   discordWebhook: string;
   googleSheetsWebhook: string;
+
+  // Email notifications (Resend API)
+  resendApiKey: string;         // Resend API key
+  emailFromName: string;        // "From" display name e.g. "In Lights"
+  emailFromAddress: string;     // Verified sender e.g. "noreply@inlights.com"
+  emailNotifyOnSubmission: boolean;   // Email label when new submission arrives
+  emailNotifyArtistOnStatus: boolean; // Email artist when status changes
 
   // Advanced / Creative
   submissionCooldownHours: number;   // How many hours between submissions per artist name
@@ -165,6 +173,11 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   notificationEmail: '',
   discordWebhook: '',
   googleSheetsWebhook: '',
+  resendApiKey: '',
+  emailFromName: 'In Lights',
+  emailFromAddress: '',
+  emailNotifyOnSubmission: false,
+  emailNotifyArtistOnStatus: false,
   submissionCooldownHours: 0,
   maintenanceMode: false,
   maintenanceModeMessage: 'The submission portal is temporarily unavailable. Please check back soon.',
