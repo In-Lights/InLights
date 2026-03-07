@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Sparkles, Copy, Check, Loader2, ExternalLink, Music2 } from 'lucide-react';
+import { Sparkles, Copy, Check, Loader2, ExternalLink, Music2, AlertTriangle } from 'lucide-react';
 import { ReleaseSubmission } from '../types';
+import { getAdminSettings } from '../store';
 
 interface Props {
   release: ReleaseSubmission;
@@ -8,16 +9,13 @@ interface Props {
 
 async function fetchLyricsFromDocs(docsUrl: string): Promise<string | null> {
   if (!docsUrl) return null;
-  // Convert Google Docs URL to export/plain text URL
   const match = docsUrl.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
   if (!match) return null;
-  const docId = match[1];
-  const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+  const exportUrl = `https://docs.google.com/document/d/${match[1]}/export?format=txt`;
   try {
     const res = await fetch(exportUrl);
     if (!res.ok) return null;
-    const text = await res.text();
-    return text.trim().slice(0, 2000); // cap at 2000 chars
+    return (await res.text()).trim().slice(0, 2000);
   } catch {
     return null;
   }
@@ -37,17 +35,20 @@ export default function SpotifyPitchGenerator({ release }: Props) {
     setPitch('');
     setLyricsStatus('');
 
-    // Try to grab lyrics from first track with a Google Docs link
+    const settings = await getAdminSettings();
+    if (!settings.geminiApiKey) {
+      setError('No Gemini API key set. Go to Settings → AI to add your free key.');
+      setLoading(false);
+      return;
+    }
+
+    // Try to grab lyrics
     let lyrics = '';
     for (const track of release.tracks) {
       if (track.lyricsGoogleDocsLink) {
         setLyricsStatus('Fetching lyrics from Google Docs…');
         const fetched = await fetchLyricsFromDocs(track.lyricsGoogleDocsLink);
-        if (fetched) {
-          lyrics = fetched;
-          setLyricsStatus('✓ Lyrics loaded');
-          break;
-        }
+        if (fetched) { lyrics = fetched; setLyricsStatus('✓ Lyrics loaded'); break; }
       }
     }
     if (!lyrics) setLyricsStatus('No lyrics found — generating from metadata only');
@@ -65,48 +66,55 @@ export default function SpotifyPitchGenerator({ release }: Props) {
 
     const prompt = `You are a music PR expert writing a Spotify playlist pitch for a label submission.
 
-Write a compelling, concise Spotify editorial pitch (max 200 words) for this release. 
-The pitch should hook the playlist curator immediately, describe the sound and mood vividly, 
-mention key influences if apparent, and end with a clear ask to be added to a relevant playlist.
-Use professional but energetic music industry language. No emojis.
+Write a compelling, concise Spotify editorial pitch (max 200 words) for this release.
+Hook the curator immediately, describe the sound and mood vividly, mention key influences if apparent,
+and end with a clear ask to be added to a relevant playlist.
+Use professional but energetic music industry language. No emojis. No headers. Just the pitch text.
 
 RELEASE DETAILS:
 Artist: ${release.mainArtist}${collabs ? ` feat. ${collabs}` : ''}${features ? ` (ft. ${features})` : ''}
 Title: ${release.releaseTitle}
 Type: ${release.releaseType.toUpperCase()}
 Genre: ${release.genre}
-Release Date: ${release.releaseDate}
+Release Date: ${release.releaseDate || 'TBD'}
 Explicit: ${release.explicitContent ? 'Yes' : 'No'}
 Tracks:
 ${trackList}
 ${credits ? `Credits: ${credits}` : ''}
-${lyrics ? `\nLYRICS EXCERPT (first track):\n${lyrics.slice(0, 800)}` : ''}
-
-Write only the pitch text, ready to paste into Spotify for Artists. No headers or labels.`;
+${lyrics ? `\nLYRICS EXCERPT:\n${lyrics.slice(0, 800)}` : ''}`;
 
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-      const res = await fetch(`${supabaseUrl}/functions/v1/generate-pitch`, {
+      // Gemini 1.5 Flash — free tier: 15 RPM, 1M TPM, no credit card needed
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiApiKey}`;
+      const res = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({ prompt }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { maxOutputTokens: 512, temperature: 0.85 },
+        }),
       });
+
       const data = await res.json();
-      if (data.error) {
-        setError(data.error.includes('ANTHROPIC_API_KEY') 
-          ? 'Anthropic API key not set. Run: supabase secrets set ANTHROPIC_API_KEY=sk-ant-...'
-          : data.error);
-      } else if (data.pitch) {
-        setPitch(data.pitch);
-      } else {
-        setError('Failed to generate pitch. Please try again.');
+
+      if (!res.ok) {
+        const msg = data?.error?.message || `HTTP ${res.status}`;
+        if (msg.toLowerCase().includes('api key') || res.status === 400 || res.status === 403) {
+          setError('Invalid API key. Get a free key at aistudio.google.com/apikey → paste in Settings → AI.');
+        } else {
+          setError(`Gemini error: ${msg}`);
+        }
+        return;
       }
-    } catch {
-      setError('Network error. Please try again.');
+
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text) {
+        setPitch(text.trim());
+      } else {
+        setError('Empty response from Gemini. Please try again.');
+      }
+    } catch (e) {
+      setError(`Network error: ${e instanceof Error ? e.message : 'Please try again.'}`);
     } finally {
       setLoading(false);
     }
@@ -132,69 +140,51 @@ Write only the pitch text, ready to paste into Spotify for Artists. No headers o
 
   return (
     <div className="glass-card rounded-2xl p-5 space-y-4">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Music2 className="w-4 h-4 text-green-400" />
           <span className="text-sm font-bold">Spotify Playlist Pitch</span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium">Gemini AI</span>
         </div>
-        <button
-          onClick={() => { setOpen(false); setPitch(''); setError(''); }}
-          className="text-xs text-zinc-600 hover:text-zinc-400"
-        >✕ Close</button>
+        <button onClick={() => { setOpen(false); setPitch(''); setError(''); }} className="text-xs text-zinc-600 hover:text-zinc-400">✕ Close</button>
       </div>
 
-      {/* Lyrics status */}
       {lyricsStatus && (
-        <p className={`text-xs ${lyricsStatus.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-500'}`}>
-          {lyricsStatus}
-        </p>
+        <p className={`text-xs ${lyricsStatus.startsWith('✓') ? 'text-emerald-400' : 'text-zinc-500'}`}>{lyricsStatus}</p>
       )}
 
-      {/* Loading */}
       {loading && (
         <div className="flex items-center gap-3 py-6 justify-center">
           <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
-          <span className="text-sm text-zinc-400">Writing pitch…</span>
+          <span className="text-sm text-zinc-400">Writing pitch with Gemini…</span>
         </div>
       )}
 
-      {/* Error */}
-      {error && (
-        <div className="text-sm text-red-400 bg-red-500/10 rounded-xl px-4 py-3">{error}</div>
+      {error && !loading && (
+        <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 rounded-xl px-4 py-3">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>{error}</span>
+        </div>
       )}
 
-      {/* Pitch output */}
       {pitch && !loading && (
         <>
           <div className="bg-zinc-900/60 rounded-xl p-4 border border-white/5">
             <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">{pitch}</p>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 text-sm font-medium transition-all"
-            >
+          <div className="flex gap-2 flex-wrap">
+            <button onClick={handleCopy} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 text-sm font-medium transition-all">
               {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Pitch</>}
             </button>
-            <button
-              onClick={generate}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-zinc-400 hover:text-white text-sm transition-all"
-            >
+            <button onClick={generate} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-zinc-400 hover:text-white text-sm transition-all">
               <Sparkles className="w-4 h-4" /> Regenerate
             </button>
-            <a
-              href="https://artists.spotify.com"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-zinc-400 hover:text-white text-sm transition-all ml-auto"
-            >
+            <a href="https://artists.spotify.com" target="_blank" rel="noreferrer"
+              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-zinc-400 hover:text-white text-sm transition-all ml-auto">
               <ExternalLink className="w-4 h-4" /> Spotify for Artists
             </a>
           </div>
-          <p className="text-[10px] text-zinc-700">
-            Paste this into Spotify for Artists → Music → select release → Pitch to Editors
-          </p>
+          <p className="text-[10px] text-zinc-700">Paste into Spotify for Artists → Music → select release → Pitch to Editors</p>
         </>
       )}
     </div>

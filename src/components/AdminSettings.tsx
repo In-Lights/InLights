@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Save, Settings, FileText, Bell, Lock, Table, Send,
   CheckCircle2, XCircle, Loader2, Palette, ExternalLink,
-  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity, Database, Mail, Eye, EyeOff
+  Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity, Database, Mail, Eye, EyeOff, Sparkles
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
 import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook, testEmailConfig, getAdminSession, syncAllToSheets } from '../store';
@@ -148,6 +148,18 @@ function Section({ title, desc, children }: { title: string; desc?: string; chil
 
 // ── Main component ──────────────────────────────────────────
 
+function CopyCodeButton({ code }: { code: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={() => { navigator.clipboard.writeText(code); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+      className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-white transition-colors px-2 py-1 rounded-lg hover:bg-white/5"
+    >
+      {copied ? <><Check className="w-3.5 h-3.5 text-emerald-400" /> Copied!</> : <><Copy className="w-3.5 h-3.5" /> Copy</>}
+    </button>
+  );
+}
+
 function SyncAllSheetsButton({ webhookUrl }: { webhookUrl: string }) {
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<{ sent: number } | null>(null);
@@ -175,7 +187,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [saveError, setSaveError] = useState('');
-  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'email' | 'drive' | 'discord' | 'sheets' | 'team' | 'log' | 'backup'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'form' | 'rules' | 'status' | 'security' | 'advanced' | 'email' | 'drive' | 'discord' | 'sheets' | 'team' | 'log' | 'backup' | 'ai'>('branding');
 
   const [testingDiscord, setTestingDiscord] = useState(false);
   const [discordResult, setDiscordResult] = useState<'success' | 'fail' | null>(null);
@@ -253,7 +265,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
   const isOwner = role === 'owner' || !role; // legacy logins treated as owner
 
   // Tabs restricted to owner only
-  const OWNER_ONLY_TABS = ['security', 'discord', 'drive', 'sheets', 'email'] as const;
+  const OWNER_ONLY_TABS = ['security', 'discord', 'drive', 'sheets', 'email', 'ai'] as const;
 
   const tabs = [
     { id: 'branding' as const, label: 'Branding', icon: Palette },
@@ -266,6 +278,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
     { id: 'discord' as const, label: 'Discord', icon: Bell },
     { id: 'drive' as const, label: 'Drive', icon: FolderOpen },
     { id: 'sheets' as const, label: 'Sheets', icon: Table },
+    { id: 'ai' as const, label: 'AI', icon: Sparkles },
     { id: 'team' as const, label: 'Team', icon: Users2 },
     { id: 'log' as const, label: 'Activity', icon: Activity },
     { id: 'backup' as const, label: 'Backup', icon: Database },
@@ -597,54 +610,82 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       )}
 
       {/* ── EMAIL ── */}
-      {activeTab === 'email' && isOwner && (
+      {activeTab === 'email' && isOwner && (() => {
+        const SCRIPT_CODE = `function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    if (data.action !== 'sendEmail') return ok('ignored');
+    GmailApp.sendEmail(data.to, data.subject, '', {
+      htmlBody: data.html,
+      name: data.fromName || 'In Lights'
+    });
+    return ok('sent');
+  } catch(err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function ok(msg) {
+  return ContentService
+    .createTextOutput(JSON.stringify({ ok: true, msg: msg }))
+    .setMimeType(ContentService.MimeType.JSON);
+}`;
+
+        return (
         <div className="space-y-5">
 
-          {/* Intro card */}
+          {/* Intro */}
           <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5 flex gap-4">
             <Mail className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-violet-300 mb-1">Powered by Gmail</p>
+              <p className="text-sm font-semibold text-violet-300 mb-1">Gmail — via Google Apps Script</p>
               <p className="text-xs text-zinc-400 leading-relaxed">
-                Use your Gmail account to send notifications. You'll need a{' '}
-                <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">
-                  Gmail App Password
-                </a>
-                {' '}— go to Google Account → Security → 2-Step Verification → App Passwords.
-                Your regular Gmail password will not work here.
+                Browsers can't call Gmail SMTP directly (CORS). The fix: a tiny Google Apps Script
+                acts as a relay — emails come <strong className="text-zinc-200">from your own Gmail</strong>, completely free, no extra accounts.
+                Same approach you already use for Sheets. One-time setup takes about 2 minutes.
               </p>
             </div>
           </div>
 
-          {/* Gmail credentials */}
-          <Section title="Gmail Credentials" desc="Connect your Gmail account">
-            <Field label="Gmail Address" hint="The Gmail account to send from">
+          {/* Step 1 */}
+          <Section title="Step 1 — Create the Apps Script" desc="script.google.com → New project → paste → deploy">
+            <div className="bg-zinc-950 border border-white/10 rounded-xl overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
+                <span className="text-xs text-zinc-500 font-mono">Code.gs</span>
+                <CopyCodeButton code={SCRIPT_CODE} />
+              </div>
+              <pre className="p-4 text-xs text-zinc-300 overflow-x-auto leading-relaxed font-mono whitespace-pre">{SCRIPT_CODE}</pre>
+            </div>
+            <ol className="mt-4 space-y-2 text-xs text-zinc-400 list-none">
+              {[
+                <span>Go to <a href="https://script.google.com" target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">script.google.com</a> → click <strong className="text-zinc-200">New project</strong></span>,
+                <span>Delete all existing code, paste the script above</span>,
+                <span>Click <strong className="text-zinc-200">Deploy → New deployment</strong></span>,
+                <span>Type: <strong className="text-zinc-200">Web app</strong> · Execute as: <strong className="text-zinc-200">Me</strong> · Who has access: <strong className="text-zinc-200">Anyone</strong></span>,
+                <span>Click <strong className="text-zinc-200">Deploy</strong> → authorize Gmail access → copy the <strong className="text-zinc-200">Web app URL</strong></span>,
+              ].map((step, i) => (
+                <li key={i} className="flex gap-3">
+                  <span className="flex-shrink-0 w-5 h-5 rounded-full bg-violet-500/20 text-violet-400 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+                  <span className="leading-relaxed">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </Section>
+
+          {/* Step 2 — Webhook URL */}
+          <Section title="Step 2 — Paste your Web App URL" desc="From the Apps Script deployment dialog">
+            <Field label="Gmail Webhook URL" hint="https://script.google.com/macros/s/.../exec">
               <input
-                type="email"
-                value={settings.gmailUser}
-                onChange={e => setSettings(p => ({ ...p, gmailUser: e.target.value }))}
-                placeholder="you@gmail.com"
-                className="input-dark w-full px-4 py-2.5 rounded-xl"
+                type="url"
+                value={settings.gmailWebhookUrl ?? ''}
+                onChange={e => setSettings(p => ({ ...p, gmailWebhookUrl: e.target.value }))}
+                placeholder="https://script.google.com/macros/s/.../exec"
+                className="input-dark w-full px-4 py-2.5 rounded-xl font-mono text-sm"
               />
             </Field>
-            <Field label="Gmail App Password" hint="16-character app password from Google Account settings">
-              <div className="relative">
-                <input
-                  type={showApiKey ? 'text' : 'password'}
-                  value={settings.gmailAppPassword}
-                  onChange={e => setSettings(p => ({ ...p, gmailAppPassword: e.target.value }))}
-                  placeholder="xxxx xxxx xxxx xxxx"
-                  className="input-dark w-full px-4 py-2.5 rounded-xl pr-10 font-mono text-sm"
-                />
-                <button
-                  onClick={() => setShowApiKey(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
-                >
-                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </Field>
-            <Field label="From Name" hint="Display name recipients will see">
+            <Field label="From Name" hint="Name recipients see in their inbox">
               <input
                 type="text"
                 value={settings.emailFromName}
@@ -655,76 +696,69 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
             </Field>
           </Section>
 
-          {/* Notification toggles */}
-          <Section title="Notifications" desc="Choose what triggers an email">
+          {/* Step 3 — Toggles */}
+          <Section title="Step 3 — Choose triggers" desc="What actions send an email">
             <div className="space-y-3">
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <div className="relative mt-0.5">
-                  <input type="checkbox" className="sr-only peer"
-                    checked={settings.emailNotifyOnSubmission}
-                    onChange={e => setSettings(p => ({ ...p, emailNotifyOnSubmission: e.target.checked }))} />
-                  <div className="w-10 h-5 rounded-full bg-zinc-700 peer-checked:bg-violet-600 transition-colors" />
-                  <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-zinc-200">New submission alert</p>
-                  <p className="text-xs text-zinc-500">Email <strong className="text-zinc-400">{settings.notificationEmail || 'your notification address'}</strong> when an artist submits</p>
-                </div>
-              </label>
-
-              <label className="flex items-start gap-3 cursor-pointer group">
-                <div className="relative mt-0.5">
-                  <input type="checkbox" className="sr-only peer"
-                    checked={settings.emailNotifyArtistOnStatus}
-                    onChange={e => setSettings(p => ({ ...p, emailNotifyArtistOnStatus: e.target.checked }))} />
-                  <div className="w-10 h-5 rounded-full bg-zinc-700 peer-checked:bg-violet-600 transition-colors" />
-                  <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-medium text-zinc-200">Artist status updates</p>
-                  <p className="text-xs text-zinc-500">Email the artist automatically when you change their release status (requires artist email at submission)</p>
-                </div>
-              </label>
+              {([
+                { key: 'emailNotifyOnSubmission' as const, label: 'New submission alert', desc: `Email ${settings.notificationEmail || 'your notification address'} when an artist submits` },
+                { key: 'emailNotifyArtistOnStatus' as const, label: 'Artist status updates', desc: 'Email the artist automatically when you change their release status (requires artist email at submission)' },
+              ] as const).map(({ key, label, desc }) => (
+                <label key={key} className="flex items-start gap-3 cursor-pointer group">
+                  <div className="relative mt-0.5">
+                    <input type="checkbox" className="sr-only peer"
+                      checked={settings[key] as boolean}
+                      onChange={e => setSettings(p => ({ ...p, [key]: e.target.checked }))} />
+                    <div className="w-10 h-5 rounded-full bg-zinc-700 peer-checked:bg-violet-600 transition-colors" />
+                    <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-zinc-200">{label}</p>
+                    <p className="text-xs text-zinc-500">{desc}</p>
+                  </div>
+                </label>
+              ))}
             </div>
           </Section>
 
-          {/* Test email */}
-          <Section title="Send Test Email" desc="Verify your Gmail setup is working">
-            <div className="flex gap-3 items-center">
+          {/* Test */}
+          <Section title="Test it" desc="Fires a real email through your script to your notification address">
+            <div className="flex gap-3 items-center flex-wrap">
               <button
                 onClick={async () => {
                   setTestingEmail(true); setEmailTestResult(null);
-                  const ok = await testEmailConfig(settings.notificationEmail || settings.gmailUser);
+                  const ok = await testEmailConfig(settings.notificationEmail || '');
                   setEmailTestResult(ok ? 'success' : 'fail');
                   setTestingEmail(false);
                 }}
-                disabled={testingEmail || !settings.gmailUser || !settings.gmailAppPassword}
+                disabled={testingEmail || !settings.gmailWebhookUrl || !settings.notificationEmail}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-semibold transition-colors"
               >
                 {testingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                Send Test
+                Send Test Email
               </button>
-              {emailTestResult === 'success' && (
-                <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="w-4 h-4" /> Email sent!</span>
-              )}
-              {emailTestResult === 'fail' && (
-                <span className="flex items-center gap-1.5 text-sm text-red-400"><XCircle className="w-4 h-4" /> Failed — check Gmail address and App Password</span>
-              )}
+              {emailTestResult === 'success' && <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="w-4 h-4" /> Sent — check your inbox</span>}
+              {emailTestResult === 'fail' && <span className="flex items-center gap-1.5 text-sm text-red-400"><XCircle className="w-4 h-4" /> Failed — double-check your webhook URL</span>}
             </div>
+            {!settings.notificationEmail && (
+              <p className="text-xs text-amber-400 mt-2">⚠️ Set a Notification Email in the Discord tab first — that's where the test goes.</p>
+            )}
+            {settings.gmailWebhookUrl && settings.notificationEmail && (
+              <p className="text-xs text-zinc-600 mt-2">Test will send to: {settings.notificationEmail}</p>
+            )}
           </Section>
 
-          {/* Template preview */}
-          <Section title="Email Templates" desc="Auto-generated based on your branding">
+          {/* Templates */}
+          <Section title="Email Templates" desc="Beautiful HTML emails sent from your own Gmail">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
-                { icon: '📬', title: 'New Submission', desc: 'Sent to label when artist submits. Includes all release details and a link to the admin panel.' },
-                { icon: '✅', title: 'Approved', desc: 'Sent to artist when you approve their release. Upbeat tone with next steps.' },
-                { icon: '❌', title: 'Rejected', desc: 'Sent to artist on rejection. Includes your label notes if provided.' },
-                { icon: '📅', title: 'Scheduled', desc: 'Sent when a release is scheduled. Shows the confirmed drop date.' },
-                { icon: '🎵', title: 'Released', desc: 'Sent when a release goes live. Celebratory tone.' },
-                { icon: '⏳', title: 'Under Review', desc: 'Sent when status moves to pending. Sets expectation for response time.' },
+                { icon: '📬', title: 'New Submission', desc: 'Sent to label when artist submits. Includes all details + admin link.' },
+                { icon: '✅', title: 'Approved', desc: 'Sent to artist on approval. Upbeat tone with next steps.' },
+                { icon: '❌', title: 'Rejected', desc: 'Sent to artist on rejection. Includes label notes if any.' },
+                { icon: '📅', title: 'Scheduled', desc: 'Confirms the release date to the artist.' },
+                { icon: '🎵', title: 'Released', desc: 'Celebratory email when a release goes live.' },
+                { icon: '⏳', title: 'Under Review', desc: 'Sets expectations when status moves to pending.' },
               ].map(t => (
-                <div key={t.title} className="flex gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/8">
+                <div key={t.title} className="flex gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/[0.06]">
                   <span className="text-2xl">{t.icon}</span>
                   <div>
                     <p className="text-sm font-semibold text-zinc-200">{t.title}</p>
@@ -735,8 +769,8 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
             </div>
           </Section>
         </div>
-      )}
-
+        );
+      })()}
       {/* ── DISCORD ── */}
       {activeTab === 'discord' && isOwner && (
         <div className="space-y-5">
@@ -1118,6 +1152,70 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               <p className="text-zinc-400 text-sm">Enable the Drive Uploader above to configure Google credentials and give artists a seamless upload experience.</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── AI ── */}
+      {activeTab === 'ai' && isOwner && (
+        <div className="space-y-5">
+
+          {/* Intro card */}
+          <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5 flex gap-4">
+            <Sparkles className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-violet-300 mb-1">AI-Powered Features</p>
+              <p className="text-xs text-zinc-400 leading-relaxed">
+                Connect your{' '}
+                <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">
+                  Gemini API key
+                </a>
+                {' '}to unlock AI features directly in the browser — no backend needed.
+                Your key is stored in Supabase and never exposed publicly.
+                <br /><br />
+                Get a key at <span className="text-violet-300">aistudio.google.com</span> → Get API Key.
+              </p>
+            </div>
+          </div>
+
+          {/* API Key */}
+          <Section title="Google Gemini API Key" desc="Free tier — 15 req/min, no credit card needed">
+            <Field label="API Key" hint="Starts with stored in DB, owner-only">
+              <div className="relative">
+                <input
+                  type={showApiKey ? 'text' : 'password'}
+                  value={settings.geminiApiKey ?? ''}
+                  onChange={e => setSettings(p => ({ ...p, geminiApiKey: e.target.value }))}
+                  placeholder="AIza..."
+                  className="input-dark w-full px-4 py-2.5 rounded-xl pr-10 font-mono text-sm"
+                />
+                <button
+                  onClick={() => setShowApiKey(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300"
+                >
+                  {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </Field>
+          </Section>
+
+          {/* Features */}
+          <Section title="AI Features" desc="Available once your API key is set">
+            <div className="space-y-3">
+              <div className="flex gap-3 p-4 rounded-xl bg-white/[0.03] border border-white/8">
+                <span className="text-2xl">🎵</span>
+                <div>
+                  <p className="text-sm font-semibold text-zinc-200">Spotify Playlist Pitch</p>
+                  <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">
+                    Auto-generates a professional curator pitch for each release using metadata + lyrics.
+                    Available on every release detail page.
+                  </p>
+                  <span className={`inline-block mt-2 text-[11px] px-2 py-0.5 rounded-full font-medium ${settings.geminiApiKey ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-500'}`}>
+                    {settings.geminiApiKey ? '✓ Active' : 'Requires API key'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </Section>
         </div>
       )}
 

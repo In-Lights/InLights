@@ -127,13 +127,16 @@ export interface AdminSettings {
   discordWebhook: string;
   googleSheetsWebhook: string;
 
-  // Email notifications (Gmail)
-  gmailUser: string;          // Your Gmail address e.g. "you@gmail.com"
-  gmailAppPassword: string;   // Gmail App Password (not your regular password)
-  emailFromName: string;        // "From" display name e.g. "In Lights"
-  emailFromAddress: string;     // Verified sender e.g. "noreply@inlights.com"
-  emailNotifyOnSubmission: boolean;   // Email label when new submission arrives
-  emailNotifyArtistOnStatus: boolean; // Email artist when status changes
+  // Email notifications (Gmail via Google Apps Script relay — no backend needed)
+  gmailWebhookUrl: string;        // Your Apps Script Web App URL (same as Sheets setup)
+  emailFromName: string;          // "From" display name shown in emails
+  emailNotifyOnSubmission: boolean;
+  emailNotifyArtistOnStatus: boolean;
+  // Kept for DB compat
+  gmailUser: string;
+  gmailAppPassword: string;
+  resendApiKey: string;
+  emailFromAddress: string;
 
   // Advanced / Creative
   submissionCooldownHours: number;   // How many hours between submissions per artist name
@@ -169,6 +172,9 @@ export interface AdminSettings {
 
   // Label note templates — quick-insert snippets for admin notes
   noteTemplates: string; // newline-separated list of template strings
+
+  // AI — Spotify Pitch Generator
+  geminiApiKey: string; // Paste your Gemini API key (stored in DB, owner-only) — stored in DB, owner-only
 }
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
@@ -196,6 +202,8 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   notificationEmail: '',
   discordWebhook: '',
   googleSheetsWebhook: '',
+  resendApiKey: '',
+  gmailWebhookUrl: '',
   gmailUser: '',
   gmailAppPassword: '',
   emailFromName: 'In Lights',
@@ -227,6 +235,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   labelInstagram: '',
   labelWebsite: '',
   noteTemplates: 'Cover art too small — must be 3000×3000px minimum\nMissing ISRC codes — please provide before approval\nRelease date too soon — minimum 7 days notice required\nWAV files not received — please upload to Drive\nMissing producer credits — required for all tracks\nExplicit content not flagged correctly\nDuplicate submission — please check your previous submission\nArtist profile links missing — add Spotify and Apple Music URLs',
+  geminiApiKey: '',
 };
 
 export const RELEASE_TYPE_LIMITS: Record<ReleaseType, { min: number; max: number; label: string }> = {

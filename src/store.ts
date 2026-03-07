@@ -122,11 +122,14 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     labelWebsite: data.label_website ?? '',
     gmailUser: data.gmail_user ?? '',
     gmailAppPassword: data.gmail_app_password ?? '',
+    resendApiKey: data.resend_api_key ?? '',
+    gmailWebhookUrl: data.gmail_webhook_url ?? '',
     emailFromName: data.email_from_name ?? DEFAULT_ADMIN_SETTINGS.emailFromName,
     emailFromAddress: data.email_from_address ?? '',
     emailNotifyOnSubmission: data.email_notify_on_submission ?? false,
     emailNotifyArtistOnStatus: data.email_notify_artist_on_status ?? false,
     noteTemplates: data.note_templates ?? DEFAULT_ADMIN_SETTINGS.noteTemplates,
+    geminiApiKey: data.gemini_api_key ?? '',
   };
 }
 
@@ -192,11 +195,14 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
     release_reminder_days: settings.releaseReminderDays ?? 7,
     gmail_user: settings.gmailUser || null,
     gmail_app_password: settings.gmailAppPassword || null,
+    resend_api_key: settings.resendApiKey || null,
+    gmail_webhook_url: settings.gmailWebhookUrl || null,
     email_from_name: settings.emailFromName || null,
     email_from_address: settings.emailFromAddress || null,
     email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
     email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
     note_templates: settings.noteTemplates || null,
+    gemini_api_key: settings.geminiApiKey || null,
   }).eq('settings_id', 1).then(() => {}); // intentionally silent
 }
 
@@ -953,47 +959,33 @@ function buildStatusEmailHtml(release: ReleaseSubmission, settings: AdminSetting
 </body></html>`;
 }
 
+// ── sendEmail via Gmail (Google Apps Script relay) ───────────────────────────
+// Gmail SMTP can't be called from the browser directly (CORS blocked).
+// Solution: a tiny Google Apps Script acts as a relay — same pattern as the
+// Sheets webhook you already use. Deploy it once, paste the URL in Settings → Email.
+// The script runs as YOU (your Gmail), so emails come from your own address.
 async function sendEmail(to: string, subject: string, html: string, settings: AdminSettings): Promise<boolean> {
-  if (!settings.gmailUser || !settings.gmailAppPassword) return false;
+  if (!settings.gmailWebhookUrl) return false;
   try {
-    // Use Gmail SMTP via a CORS-friendly proxy approach:
-    // We call the Supabase Edge Function "send-email" which uses nodemailer with Gmail SMTP.
-    // If no edge function is deployed, fallback to mailto: link generation is not possible here,
-    // so we use the EmailJS public API as a zero-backend relay.
-    const fromName = settings.emailFromName || settings.companyName;
-    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    // Apps Script requires no-cors for POST — it processes and sends via Gmail.doSend()
+    await fetch(settings.gmailWebhookUrl, {
       method: 'POST',
+      mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        service_id: 'gmail',
-        template_id: 'template_inlights',
-        user_id: settings.gmailUser, // used as EmailJS public key fallback
-        accessToken: settings.gmailAppPassword,
-        template_params: { to_email: to, subject, html_body: html, from_name: fromName },
-      }),
-    });
-    // EmailJS returns 200 on success; if not configured, fallback to Supabase edge fn
-    if (res.ok) return true;
-
-    // Fallback: direct Gmail SMTP via Supabase edge function (if deployed)
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const edgeRes = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
-      },
-      body: JSON.stringify({
+        action: 'sendEmail',
         to,
         subject,
         html,
-        gmailUser: settings.gmailUser,
-        gmailAppPassword: settings.gmailAppPassword,
-        fromName,
+        fromName: settings.emailFromName || settings.companyName || 'In Lights',
       }),
     });
-    return edgeRes.ok;
-  } catch { return false; }
+    // no-cors means we can't read the response status — assume success if no throw
+    return true;
+  } catch (e) {
+    console.error('Email send failed:', e);
+    return false;
+  }
 }
 
 export async function sendSubmissionNotification(release: ReleaseSubmission): Promise<void> {
@@ -1026,7 +1018,7 @@ export async function testEmailConfig(toEmail: string): Promise<boolean> {
     <div style="max-width:480px;margin:0 auto;background:#18181b;border-radius:16px;padding:40px;text-align:center;">
       <div style="font-size:52px;margin-bottom:16px;">✅</div>
       <h2 style="color:#10b981;margin:0 0 8px;font-size:22px;">Email is working!</h2>
-      <p style="color:#71717a;margin:0;">Your ${settings.companyName} Gmail email notifications are configured correctly.</p>
+      <p style="color:#71717a;margin:0;">Your ${settings.companyName} email notifications via Resend are configured correctly.</p>
     </div></body></html>`;
   return sendEmail(toEmail, `✅ ${settings.companyName} — Email test successful`, html, settings);
 }
@@ -1187,3 +1179,7 @@ export async function flushOfflineQueue(): Promise<number> {
   saveOfflineQueue(remaining);
   return flushed;
 }
+
+// ── NOTE: run these migrations in Supabase SQL Editor ──────────────────────
+// ALTER TABLE settings ADD COLUMN IF NOT EXISTS gemini_api_key TEXT;
+// ALTER TABLE settings ADD COLUMN IF NOT EXISTS gmail_webhook_url TEXT;

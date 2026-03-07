@@ -34,6 +34,7 @@ function App() {
   }, [loggedIn]);
   const [adminView, setAdminView] = useState<AdminView>('dashboard');
   const [selectedRelease, setSelectedRelease] = useState<ReleaseSubmission | null>(null);
+  const [detailKey, setDetailKey] = useState(0); // bump to force ReleaseDetail remount
   const [refreshKey, setRefreshKey] = useState(0);
   const [adminSettings, setAdminSettings] = useState<AdminSettings>({ ...DEFAULT_ADMIN_SETTINGS });
   const [publicBranding, setPublicBranding] = useState<AdminSettings>({ ...DEFAULT_ADMIN_SETTINGS });
@@ -94,14 +95,10 @@ function App() {
     const all = await getSubmissions();
     const found = all.find(r => r.id === releaseId);
     if (found) {
-      // Reset first so React re-renders even if already in detail view
-      setSelectedRelease(null);
-      setAdminView('dashboard');
-      // Small tick to let state flush before switching
-      setTimeout(() => {
-        setSelectedRelease(found);
-        setAdminView('detail');
-      }, 0);
+      // Always bump detailKey so ReleaseDetail fully remounts even if same view
+      setSelectedRelease(found);
+      setAdminView('detail');
+      setDetailKey(k => k + 1);
     } else {
       setAdminView('dashboard');
       setRefreshKey(k => k + 1);
@@ -240,6 +237,7 @@ function App() {
           )}
           {adminView === 'detail' && selectedRelease && (
             <ReleaseDetail
+              key={detailKey}
               release={selectedRelease}
               onBack={() => { setAdminView('dashboard'); setSelectedRelease(null); setRefreshKey(k => k + 1); }}
               commentsEnabled={adminSettings.internalCommentsEnabled ?? true}
