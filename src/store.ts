@@ -350,8 +350,6 @@ let _adminSession: { loggedIn: boolean; expiry: number } = { loggedIn: false, ex
 export async function loginAdmin(username: string, password: string): Promise<boolean> {
   const settings = await getAdminSettings();
   if (username !== settings.adminUsername) return false;
-  // If no hash set yet (first run), accept any password and save the hash
-  if (!settings.adminPasswordHash) return true;
   const inputHash = await hashPassword(password);
   return inputHash === settings.adminPasswordHash;
 }

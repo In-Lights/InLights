@@ -122,7 +122,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   companyLogo: 'https://i.ibb.co/1fPkzkSD/IMG-1647-1.png',
   accentColor: '#7c3aed',
   adminUsername: 'admin',
-  adminPasswordHash: '', // empty = first-run, login will prompt to set password
+  adminPasswordHash: '0a15557faae3b031ade95b1608480a5f73594f6f559e10bcfc93302f1f26c579', // SHA-256 of 'inlights2025'
   formWelcomeText: 'Submit Your Release',
   formDescription: 'Fill out the form below to submit your music release to In Lights.',
   submissionSuccessMessage: 'Your submission has been received and is under review.',

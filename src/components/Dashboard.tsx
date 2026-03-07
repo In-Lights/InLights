@@ -10,6 +10,14 @@ interface Props {
   onRefresh: () => void;
 }
 
+
+// Extract Drive file ID and return thumbnail URL
+function driveThumbnail(url: string, size = 300): string | null {
+  const m = url?.match(/\/file\/d\/([a-zA-Z0-9_-]+)|[?&]id=([a-zA-Z0-9_-]+)/);
+  const id = m?.[1] || m?.[2];
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${size}` : null;
+}
+
 export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Props) {
   const [statusFilter, setStatusFilter] = useState<ReleaseStatus | 'all'>('all');
   const [search, setSearch] = useState('');
@@ -167,8 +175,8 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
             <div key={release.id} className="glass-card rounded-xl p-4 flex items-center gap-4 hover:bg-white/[0.03] transition-all">
               {/* Artwork thumbnail */}
               <div className="w-12 h-12 rounded-lg flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/5">
-                {release.coverArtImageUrl ? (
-                  <img src={release.coverArtImageUrl} alt="" className="w-full h-full object-cover"
+                {driveThumbnail(release.coverArtDriveLink) ? (
+                  <img src={driveThumbnail(release.coverArtDriveLink)!} alt="" className="w-full h-full object-cover"
                     onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center">

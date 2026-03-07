@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   Music, User, Disc3, Upload, ChevronRight, ChevronLeft,
   Plus, Trash2, CheckCircle2, AlertCircle, Calendar, Clock,
-  Image, Globe, Instagram, Mail
+  Globe, Instagram, Mail
 } from 'lucide-react';
 import {
   Track, Collaborator, ReleaseType, RELEASE_TYPE_LIMITS, GENRES,
@@ -101,8 +101,6 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
   const [explicitContent, setExplicitContent] = useState(false);
   const [genre, setGenre] = useState('');
   const [coverArtDriveLink, setCoverArtDriveLink] = useState('');
-  const [coverArtImageUrl, setCoverArtImageUrl] = useState('');
-  const [coverArtImgError, setCoverArtImgError] = useState(false);
 
   const [tracks, setTracks] = useState<Track[]>([emptyTrack()]);
   const [promoDriveLink, setPromoDriveLink] = useState('');
@@ -189,7 +187,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
         mainArtist, collaborations: collaborations.filter(c => c.name.trim()),
         features: features.filter(f => f.name.trim()),
         releaseType, releaseTitle, releaseDate, explicitContent, genre,
-        coverArtDriveLink, coverArtImageUrl, tracks,
+        coverArtDriveLink, coverArtImageUrl: '', tracks,
         promoDriveLink: promoDriveLink || undefined,
         driveFolderLink: driveFolderLink || undefined,
         rightsConfirmed,
@@ -208,7 +206,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
     setCollaborations([]); setFeatures([]);
     setReleaseType(allowedTypes[0] || 'single'); setReleaseTitle('');
     setReleaseDate(''); setDateError(''); setExplicitContent(false);
-    setGenre(''); setCoverArtDriveLink(''); setCoverArtImageUrl(''); setCoverArtImgError(false);
+    setGenre(''); setCoverArtDriveLink('');
     setTracks([emptyTrack()]); setPromoDriveLink(''); setDriveFolderLink('');
     setRightsConfirmed(false); setSubmitError('');
   };
@@ -499,48 +497,17 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                 <p className="text-xs text-zinc-500">JPG or PNG, 3000×3000px recommended</p>
               </div>
 
-              {/* Drive upload / link */}
               <DrivePickerButton
                 value={coverArtDriveLink}
                 onChange={(link) => setCoverArtDriveLink(link)}
                 label="Cover Art File"
                 hint="Upload the artwork file or paste a Google Drive share link"
                 required
+                showPreview
                 subFolder="Cover Art"
                 pickerTitle="Upload Cover Art"
                 {...driveProps}
               />
-
-              {/* Optional direct image URL + preview */}
-              {(settings.allowCoverArtImageUrl !== false) && (
-                <div>
-                  <label className="block text-sm font-semibold mb-1.5 flex items-center gap-2">
-                    <Image className="w-4 h-4 text-zinc-500" />
-                    Direct Image URL <span className="text-zinc-600 font-normal text-xs ml-1">(optional — for thumbnail preview)</span>
-                  </label>
-                  <input type="url" value={coverArtImageUrl}
-                    onChange={e => { setCoverArtImageUrl(e.target.value); setCoverArtImgError(false); }}
-                    placeholder="https://i.imgur.com/xxx.jpg or imgbb direct link"
-                    className="input-dark w-full px-4 py-3 rounded-xl text-sm" />
-                  {coverArtImageUrl && !coverArtImgError && (
-                    <div className="mt-3 flex items-start gap-4">
-                      <img
-                        src={coverArtImageUrl}
-                        alt="Cover art preview"
-                        onError={() => setCoverArtImgError(true)}
-                        className="w-24 h-24 rounded-xl object-cover border border-white/10 flex-shrink-0 bg-zinc-900"
-                      />
-                      <div className="pt-1">
-                        <p className="text-xs text-zinc-400 font-medium">Preview</p>
-                        <p className="text-xs text-zinc-600 mt-0.5">This is how the artwork will appear in the admin panel</p>
-                      </div>
-                    </div>
-                  )}
-                  {coverArtImgError && (
-                    <p className="text-xs text-amber-400 mt-1.5">Could not load image — make sure the URL is a direct image link</p>
-                  )}
-                </div>
-              )}
             </div>
 
             <div className="flex justify-between">
@@ -734,11 +701,14 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
             <div className="glass-card rounded-2xl p-6">
               <h3 className="font-bold mb-4 text-sm uppercase tracking-wider text-zinc-400">Submission Summary</h3>
               <div className="flex gap-4">
-                {coverArtImageUrl && !coverArtImgError && (
-                  <img src={coverArtImageUrl} alt="Cover"
-                    className="w-20 h-20 rounded-xl object-cover border border-white/10 flex-shrink-0"
-                    onError={() => setCoverArtImgError(true)} />
-                )}
+                {coverArtDriveLink && (() => {
+                  const m = coverArtDriveLink.match(/\/file\/d\/([a-zA-Z0-9_-]+)|[?&]id=([a-zA-Z0-9_-]+)/);
+                  const id = m?.[1] || m?.[2];
+                  return id ? (
+                    <img src={`https://drive.google.com/thumbnail?id=${id}&sz=w200`} alt="Cover"
+                      className="w-20 h-20 rounded-xl object-cover border border-white/10 flex-shrink-0 bg-zinc-900" />
+                  ) : null;
+                })()}
                 <div className="flex-1 space-y-2">
                   {[
                     ['Artist', buildArtistLine(mainArtist, collaborations)],

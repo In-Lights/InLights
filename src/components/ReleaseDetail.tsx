@@ -19,6 +19,14 @@ const emptyCollab = (): Collaborator => ({
   name: '', role: 'artist', platformLinks: { spotify: '', appleMusic: '', anghami: '' },
 });
 
+
+// Extract Drive file ID and return thumbnail URL
+function driveThumbnail(url: string, size = 300): string | null {
+  const m = url?.match(/\/file\/d\/([a-zA-Z0-9_-]+)|[?&]id=([a-zA-Z0-9_-]+)/);
+  const id = m?.[1] || m?.[2];
+  return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${size}` : null;
+}
+
 export default function ReleaseDetail({ release: initialRelease, onBack }: Props) {
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -33,7 +41,6 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
   const [genre, setGenre] = useState(initialRelease.genre);
   const [explicitContent, setExplicitContent] = useState(initialRelease.explicitContent);
   const [coverArtDriveLink, setCoverArtDriveLink] = useState(initialRelease.coverArtDriveLink);
-  const [coverArtImageUrl, setCoverArtImageUrl] = useState(initialRelease.coverArtImageUrl || '');
   const [promoDriveLink, setPromoDriveLink] = useState(initialRelease.promoDriveLink || '');
   const [driveFolderLink, setDriveFolderLink] = useState(initialRelease.driveFolderLink || '');
   const [collaborations, setCollaborations] = useState<Collaborator[]>([...initialRelease.collaborations]);
@@ -57,7 +64,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
         genre,
         explicitContent,
         coverArtDriveLink,
-        coverArtImageUrl,
+        coverArtImageUrl: '',
         promoDriveLink: promoDriveLink || undefined,
         driveFolderLink: driveFolderLink || undefined,
         collaborations: collaborations.filter(c => c.name.trim()),
@@ -84,7 +91,6 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
     setGenre(initialRelease.genre);
     setExplicitContent(initialRelease.explicitContent);
     setCoverArtDriveLink(initialRelease.coverArtDriveLink);
-    setCoverArtImageUrl(initialRelease.coverArtImageUrl || '');
     setPromoDriveLink(initialRelease.promoDriveLink || '');
     setDriveFolderLink(initialRelease.driveFolderLink || '');
     setCollaborations([...initialRelease.collaborations]);
@@ -149,8 +155,8 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
         <div className="flex items-start gap-4">
           {/* Artwork thumbnail or fallback icon */}
           <div className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/10">
-            {coverArtImageUrl ? (
-              <img src={coverArtImageUrl} alt="Cover art"
+            {driveThumbnail(coverArtDriveLink) ? (
+              <img src={driveThumbnail(coverArtDriveLink)!} alt="Cover art"
                 className="w-full h-full object-cover"
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             ) : (
@@ -225,10 +231,9 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                   <input type="url" value={coverArtDriveLink} onChange={e => setCoverArtDriveLink(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://drive.google.com/..." />
                 </div>
                 <div>
-                  <label className="block text-xs text-zinc-500 mb-1">Cover Art — Direct Image URL <span className="text-zinc-600">(for thumbnail)</span></label>
-                  <input type="url" value={coverArtImageUrl} onChange={e => setCoverArtImageUrl(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://i.imgbb.com/..." />
-                  {coverArtImageUrl && (
-                    <img src={coverArtImageUrl} alt="Preview" className="mt-2 w-16 h-16 rounded-lg object-cover border border-white/10"
+                  <p className="text-xs text-zinc-500 mb-1">Cover Art Preview</p>
+                  {driveThumbnail(coverArtDriveLink) && (
+                    <img src={driveThumbnail(coverArtDriveLink)!} alt="Preview" className="w-20 h-20 rounded-lg object-cover border border-white/10 bg-zinc-900"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   )}
                 </div>

@@ -1,18 +1,12 @@
 /**
- * DrivePickerButton — v2
- * Fixes: no premature "File selected", auto-creates organized folder structure,
- * token only requested on click, CANCEL correctly handled.
- *
- * Folder structure created:
- *   /rootFolderId
- *     └── Artist — Release Title (YYYY)
- *           ├── Cover Art
- *           ├── Track 01 — Song Name
- *           └── Promo Materials
+ * DrivePickerButton — v3
+ * - Removed "Drive link attached" ghost state
+ * - When a link exists (pasted or previously picked), show upload row + Replace button
+ * - showPreview prop: extracts Drive file ID and renders thumbnail via drive.google.com/thumbnail
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Link2, CheckCircle2, Loader2, FolderOpen, X, RefreshCw } from 'lucide-react';
+import { Link2, CheckCircle2, Loader2, FolderOpen, X, RefreshCw, Image } from 'lucide-react';
 
 declare global {
   interface Window {
@@ -39,7 +33,7 @@ interface PickerData {
   docs?: Array<{ id: string; name: string; mimeType: string; sizeBytes?: number }>;
 }
 
-// ── script loader ─────────────────────────────────────────────
+// ── helpers ───────────────────────────────────────────────────
 const _loaded = new Set<string>();
 function loadScript(src: string): Promise<void> {
   if (_loaded.has(src)) return Promise.resolve();
@@ -53,7 +47,25 @@ function loadScript(src: string): Promise<void> {
   });
 }
 
-// ── drive REST helpers ────────────────────────────────────────
+/** Extract Drive file ID from any share/view/open URL */
+function extractDriveId(url: string): string | null {
+  const patterns = [
+    /\/file\/d\/([a-zA-Z0-9_-]+)/,
+    /[?&]id=([a-zA-Z0-9_-]+)/,
+    /\/open\?id=([a-zA-Z0-9_-]+)/,
+  ];
+  for (const p of patterns) {
+    const m = url.match(p);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** Google's free thumbnail endpoint — works for any file shared "anyone with link" */
+function driveThumbnail(id: string, size = 400) {
+  return `https://drive.google.com/thumbnail?id=${id}&sz=w${size}`;
+}
+
 async function driveApiFetch(path: string, token: string, opts: RequestInit = {}) {
   const res = await fetch(`https://www.googleapis.com/drive/v3/${path}`, {
     ...opts,
@@ -64,7 +76,7 @@ async function driveApiFetch(path: string, token: string, opts: RequestInit = {}
 }
 
 async function findFolder(name: string, parentId: string, token: string): Promise<string | null> {
-  const q = encodeURIComponent(`name='${name.replace(/'/g,"\\'")}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`);
+  const q = encodeURIComponent(`name='${name.replace(/'/g, "\\'")}' and mimeType='application/vnd.google-apps.folder' and '${parentId}' in parents and trashed=false`);
   const data = await driveApiFetch(`files?q=${q}&fields=files(id)`, token);
   return data.files?.[0]?.id ?? null;
 }
@@ -74,7 +86,6 @@ async function createFolder(name: string, parentId: string, token: string): Prom
     method: 'POST',
     body: JSON.stringify({ name, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
   });
-  // make it readable by anyone (so links work)
   fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -91,11 +102,8 @@ function fmt(b: number) {
   return b < 1048576 ? `${(b / 1024).toFixed(0)} KB` : `${(b / 1048576).toFixed(1)} MB`;
 }
 
-// ── token cache (module-level) ────────────────────────────────
 let _tok: string | null = null;
 let _tokExp = 0;
-
-// ── folder cache (per session) ────────────────────────────────
 const _folderCache = new Map<string, string>();
 
 // ── props ─────────────────────────────────────────────────────
@@ -108,14 +116,13 @@ export interface DrivePickerProps {
   clientId: string;
   apiKey: string;
   rootFolderId: string;
-  /** Key to identify this release for folder caching (e.g. "artist__title") */
   releaseKey: string;
-  /** Human label for the release folder e.g. "Artist — Title (2026)" */
   releaseFolderName: string;
-  /** Subfolder inside release folder e.g. "Cover Art" or "Track 01 — Song Name" */
   subFolder: string;
   pickerTitle?: string;
   size?: 'sm' | 'md';
+  /** Show a thumbnail preview extracted from the Drive link (for cover art) */
+  showPreview?: boolean;
 }
 
 export default function DrivePickerButton({
@@ -124,21 +131,30 @@ export default function DrivePickerButton({
   releaseKey, releaseFolderName, subFolder,
   pickerTitle = 'Select or Upload',
   size = 'md',
+  showPreview = false,
 }: DrivePickerProps) {
 
-  type Phase = 'idle'|'loading'|'auth'|'folder'|'open'|'done'|'error';
+  type Phase = 'idle' | 'loading' | 'auth' | 'folder' | 'open' | 'done' | 'error';
   const [phase, setPhase] = useState<Phase>('idle');
   const [err, setErr] = useState('');
   const [pickedName, setPickedName] = useState('');
   const [pickedSize, setPickedSize] = useState('');
   const [apisReady, setApisReady] = useState(false);
   const [showManual, setShowManual] = useState(false);
+  const [thumbError, setThumbError] = useState(false);
 
   const configured = !!(clientId && apiKey && rootFolderId);
   const pad = size === 'sm' ? 'px-3 py-2.5 text-sm' : 'px-4 py-3';
   const btnPad = size === 'sm' ? '0.5rem 0.85rem' : '0.7rem 1.1rem';
 
-  // load APIs on mount (but do NOT request token)
+  // Derive thumbnail from current value whenever it changes
+  const driveId = value ? extractDriveId(value) : null;
+  const thumbUrl = driveId ? driveThumbnail(driveId) : null;
+
+  // Reset thumb error when link changes
+  useEffect(() => { setThumbError(false); }, [value]);
+
+  // Load Google APIs
   useEffect(() => {
     if (!configured || apisReady) return;
     setPhase('loading');
@@ -174,7 +190,6 @@ export default function DrivePickerButton({
   const getTargetFolder = useCallback(async (token: string): Promise<string> => {
     const subKey = `${releaseKey}||${subFolder}`;
     if (_folderCache.has(subKey)) return _folderCache.get(subKey)!;
-
     const releaseRootKey = `${releaseKey}||__root__`;
     let relId = _folderCache.get(releaseRootKey);
     if (!relId) {
@@ -195,11 +210,9 @@ export default function DrivePickerButton({
       const folderId = await getTargetFolder(token);
       setPhase('open');
 
-      // Upload view — user can upload from device
       const UpView = new window.google.picker.DocsUploadView();
       UpView.setParent(folderId);
 
-      // Browse view — see existing files in that subfolder
       const BrowseView = new window.google.picker.DocsView();
       BrowseView.setParent(folderId);
       BrowseView.setIncludeFolders(false);
@@ -217,13 +230,13 @@ export default function DrivePickerButton({
             const link = `https://drive.google.com/file/d/${f.id}/view?usp=sharing`;
             setPickedName(f.name);
             setPickedSize(f.sizeBytes ? fmt(f.sizeBytes) : '');
+            setThumbError(false);
             onChange(link, f.name);
             setShowManual(false);
             setPhase('done');
           } else if (data.action === 'cancel') {
             setPhase('idle');
           }
-          // ignore 'loaded' and other actions
         })
         .build();
       picker.setVisible(true);
@@ -247,23 +260,26 @@ export default function DrivePickerButton({
         {hint && <p className="text-xs text-zinc-500 mb-2">{hint}</p>}
         <input type="url" value={value} onChange={e => onChange(e.target.value)}
           placeholder="https://drive.google.com/file/d/..." className={`input-dark w-full ${pad} rounded-xl`} />
+        {showPreview && thumbUrl && !thumbError && (
+          <img src={thumbUrl} alt="Preview" onError={() => setThumbError(true)}
+            className="mt-3 w-28 h-28 rounded-xl object-cover border border-white/10 bg-zinc-900" />
+        )}
       </div>
     );
   }
 
   const busy = phase === 'auth' || phase === 'folder' || phase === 'open' || phase === 'loading';
   const hasLink = Boolean(value);
-  // isPicked = we picked it this session (pickedName was set by callback)
-  const isPicked = hasLink && Boolean(pickedName);
+  const isPicked = hasLink && Boolean(pickedName); // picked this session via the picker
 
   return (
     <div>
       {label && <label className="block text-sm font-semibold mb-1.5">{label} {required && <span className="text-red-400">*</span>}</label>}
       {hint && <p className="text-xs text-zinc-500 mb-2">{hint}</p>}
 
-      {/* Picked this session */}
+      {/* ── Picked this session — show green success banner ── */}
       {isPicked && !showManual && (
-        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center gap-3 mb-2">
+        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-3 flex items-center gap-3 mb-3">
           <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium text-emerald-300 truncate">{pickedName}</p>
@@ -276,17 +292,8 @@ export default function DrivePickerButton({
         </div>
       )}
 
-      {/* Has link from a previous save, but NOT picked this session */}
-      {hasLink && !isPicked && !showManual && (
-        <div className="bg-zinc-900/60 border border-white/5 rounded-xl px-4 py-3 flex items-center gap-3 mb-2">
-          <CheckCircle2 className="w-4 h-4 text-zinc-500 flex-shrink-0" />
-          <p className="text-sm text-zinc-400 flex-1 truncate">Drive link attached</p>
-          <button onClick={() => setShowManual(true)} className="text-xs text-zinc-600 hover:text-zinc-300">Change</button>
-        </div>
-      )}
-
-      {/* Upload/paste row — shown when no link yet, or manual override */}
-      {(!hasLink || showManual) && (
+      {/* ── Upload / paste row — shown when: no link yet, manual mode, or has link but not picked this session ── */}
+      {(!isPicked || showManual) && (
         <div className="flex gap-2">
           <button type="button" onClick={openPicker} disabled={busy || !apisReady}
             className="btn-primary flex items-center gap-2 rounded-xl flex-shrink-0 whitespace-nowrap"
@@ -297,14 +304,15 @@ export default function DrivePickerButton({
             {phase === 'open'   && <><Loader2 className="w-4 h-4 animate-spin" /><span className="text-sm">Opening…</span></>}
             {!busy && <><FolderOpen className="w-4 h-4" /><span className="text-sm font-semibold">Upload / Browse</span></>}
           </button>
-          <input type="url" value={value} onChange={e => { onChange(e.target.value); setPickedName(''); }}
+          <input type="url" value={value}
+            onChange={e => { onChange(e.target.value); setPickedName(''); setThumbError(false); }}
             placeholder="…or paste Drive link"
             className={`input-dark flex-1 ${pad} rounded-xl`} />
         </div>
       )}
 
-      {/* Toggle manual */}
-      {hasLink && !showManual && (
+      {/* ── Toggle between picked-state and manual input ── */}
+      {isPicked && !showManual && (
         <button onClick={() => setShowManual(true)}
           className="mt-1.5 flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-500">
           <Link2 className="w-3 h-3" /> Paste link instead
@@ -317,11 +325,39 @@ export default function DrivePickerButton({
         </button>
       )}
 
-      {/* Error */}
+      {/* ── Thumbnail preview (cover art only) ── */}
+      {showPreview && hasLink && thumbUrl && (
+        <div className="mt-3">
+          {!thumbError ? (
+            <div className="flex items-start gap-3">
+              <img
+                src={thumbUrl}
+                alt="Cover art preview"
+                onError={() => setThumbError(true)}
+                className="w-28 h-28 rounded-xl object-cover border border-white/10 bg-zinc-900 flex-shrink-0"
+              />
+              <div className="pt-1">
+                <p className="text-xs font-medium text-zinc-400">Cover Art Preview</p>
+                <p className="text-xs text-zinc-600 mt-1 leading-relaxed">
+                  This is how the artwork will appear in the admin panel.
+                  Make sure the file is shared as "Anyone with the link".
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-3 py-2.5 rounded-xl">
+              <Image className="w-4 h-4 flex-shrink-0" />
+              Preview unavailable — make sure the file is shared as "Anyone with the link can view"
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Error ── */}
       {phase === 'error' && err && (
         <div className="mt-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 px-3 py-2.5 rounded-lg flex items-start gap-2">
           <span className="flex-1">{err}</span>
-          <button onClick={() => { setPhase('idle'); setErr(''); }} className="text-red-700 hover:text-red-400">✕</button>
+          <button onClick={() => { setPhase('idle'); setErr(''); }} className="text-red-700 hover:text-red-400 flex-shrink-0">✕</button>
         </div>
       )}
     </div>
