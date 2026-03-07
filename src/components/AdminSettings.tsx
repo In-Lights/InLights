@@ -595,8 +595,8 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               <div className="relative">
                 <input
                   type={showApiKey ? 'text' : 'password'}
-                  value={s.resendApiKey}
-                  onChange={e => setS(p => ({ ...p, resendApiKey: e.target.value }))}
+                  value={settings.resendApiKey}
+                  onChange={e => setSettings(p => ({ ...p, resendApiKey: e.target.value }))}
                   placeholder="re_xxxxxxxxxxxxxxxxxxxx"
                   className="input-dark w-full px-4 py-2.5 rounded-xl pr-10 font-mono text-sm"
                 />
@@ -611,17 +611,17 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
             <Field label="From Name" hint="Display name recipients will see">
               <input
                 type="text"
-                value={s.emailFromName}
-                onChange={e => setS(p => ({ ...p, emailFromName: e.target.value }))}
-                placeholder={s.companyName || 'In Lights'}
+                value={settings.emailFromName}
+                onChange={e => setSettings(p => ({ ...p, emailFromName: e.target.value }))}
+                placeholder={settings.companyName || 'In Lights'}
                 className="input-dark w-full px-4 py-2.5 rounded-xl"
               />
             </Field>
             <Field label="From Email Address" hint="Must be verified in your Resend account">
               <input
                 type="email"
-                value={s.emailFromAddress}
-                onChange={e => setS(p => ({ ...p, emailFromAddress: e.target.value }))}
+                value={settings.emailFromAddress}
+                onChange={e => setSettings(p => ({ ...p, emailFromAddress: e.target.value }))}
                 placeholder="noreply@yourlabel.com"
                 className="input-dark w-full px-4 py-2.5 rounded-xl"
               />
@@ -634,22 +634,22 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               <label className="flex items-start gap-3 cursor-pointer group">
                 <div className="relative mt-0.5">
                   <input type="checkbox" className="sr-only peer"
-                    checked={s.emailNotifyOnSubmission}
-                    onChange={e => setS(p => ({ ...p, emailNotifyOnSubmission: e.target.checked }))} />
+                    checked={settings.emailNotifyOnSubmission}
+                    onChange={e => setSettings(p => ({ ...p, emailNotifyOnSubmission: e.target.checked }))} />
                   <div className="w-10 h-5 rounded-full bg-zinc-700 peer-checked:bg-violet-600 transition-colors" />
                   <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-zinc-200">New submission alert</p>
-                  <p className="text-xs text-zinc-500">Email <strong className="text-zinc-400">{s.notificationEmail || 'your notification address'}</strong> when an artist submits</p>
+                  <p className="text-xs text-zinc-500">Email <strong className="text-zinc-400">{settings.notificationEmail || 'your notification address'}</strong> when an artist submits</p>
                 </div>
               </label>
 
               <label className="flex items-start gap-3 cursor-pointer group">
                 <div className="relative mt-0.5">
                   <input type="checkbox" className="sr-only peer"
-                    checked={s.emailNotifyArtistOnStatus}
-                    onChange={e => setS(p => ({ ...p, emailNotifyArtistOnStatus: e.target.checked }))} />
+                    checked={settings.emailNotifyArtistOnStatus}
+                    onChange={e => setSettings(p => ({ ...p, emailNotifyArtistOnStatus: e.target.checked }))} />
                   <div className="w-10 h-5 rounded-full bg-zinc-700 peer-checked:bg-violet-600 transition-colors" />
                   <div className="absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform peer-checked:translate-x-5" />
                 </div>
@@ -667,11 +667,11 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
               <button
                 onClick={async () => {
                   setTestingEmail(true); setEmailTestResult(null);
-                  const ok = await testEmailConfig(s.notificationEmail || s.emailFromAddress);
+                  const ok = await testEmailConfig(settings.notificationEmail || settings.emailFromAddress);
                   setEmailTestResult(ok ? 'success' : 'fail');
                   setTestingEmail(false);
                 }}
-                disabled={testingEmail || !s.resendApiKey || !s.emailFromAddress}
+                disabled={testingEmail || !settings.resendApiKey || !settings.emailFromAddress}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-semibold transition-colors"
               >
                 {testingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}

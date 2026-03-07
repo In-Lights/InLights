@@ -128,7 +128,8 @@ export async function getAdminSettings(): Promise<AdminSettings> {
 export async function saveAdminSettings(settings: AdminSettings): Promise<void> {
   const { error } = await supabase
     .from('settings')
-    .update({
+    .upsert({
+      settings_id: 1,
       company_name: settings.companyName,
       admin_username: settings.adminUsername,
       // adminPasswordHash is saved separately via saveAdminPassword() to allow conditional update
@@ -179,8 +180,7 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       email_from_address: settings.emailFromAddress || null,
       email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
       email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
-    })
-    .eq('settings_id', 1);
+    }, { onConflict: 'settings_id' });
 
   if (error) throw new Error(error.message);
 }
