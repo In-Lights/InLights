@@ -58,10 +58,25 @@ export async function getAdminSettings(): Promise<AdminSettings> {
   return {
     companyName: data.company_name ?? DEFAULT_ADMIN_SETTINGS.companyName,
     companyLogo: data.company_logo ?? DEFAULT_ADMIN_SETTINGS.companyLogo,
+    accentColor: data.accent_color ?? DEFAULT_ADMIN_SETTINGS.accentColor,
     adminUsername: data.admin_username ?? DEFAULT_ADMIN_SETTINGS.adminUsername,
     adminPassword: data.admin_password ?? DEFAULT_ADMIN_SETTINGS.adminPassword,
     formWelcomeText: data.form_welcome_text ?? DEFAULT_ADMIN_SETTINGS.formWelcomeText,
     formDescription: data.form_description ?? DEFAULT_ADMIN_SETTINGS.formDescription,
+    submissionSuccessMessage: data.submission_success_message ?? DEFAULT_ADMIN_SETTINGS.submissionSuccessMessage,
+    rightsAgreementText: data.rights_agreement_text ?? DEFAULT_ADMIN_SETTINGS.rightsAgreementText,
+    requireDriveFolder: data.require_drive_folder ?? false,
+    requirePromoMaterials: data.require_promo_materials ?? false,
+    requireLyrics: data.require_lyrics ?? false,
+    minReleaseDaysNotice: data.min_release_days_notice ?? 7,
+    maxTracksAlbum: data.max_tracks_album ?? 32,
+    allowedReleaseTypes: data.allowed_release_types ?? 'single,ep,album',
+    customGenres: data.custom_genres ?? '',
+    statusLabelPending: data.status_label_pending ?? 'Pending',
+    statusLabelApproved: data.status_label_approved ?? 'Approved',
+    statusLabelScheduled: data.status_label_scheduled ?? 'Scheduled',
+    statusLabelReleased: data.status_label_released ?? 'Released',
+    statusLabelRejected: data.status_label_rejected ?? 'Rejected',
     notificationEmail: data.notification_email ?? '',
     discordWebhook: data.discord_webhook ?? '',
     googleSheetsWebhook: data.google_sheets_webhook ?? '',
@@ -74,21 +89,32 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
     .update({
       company_name: settings.companyName,
       company_logo: settings.companyLogo,
+      accent_color: settings.accentColor,
       admin_username: settings.adminUsername,
       admin_password: settings.adminPassword,
       form_welcome_text: settings.formWelcomeText,
       form_description: settings.formDescription,
-      notification_email: settings.notificationEmail ?? null,
-      discord_webhook: settings.discordWebhook ?? null,
-      google_sheets_webhook: settings.googleSheetsWebhook ?? null,
+      submission_success_message: settings.submissionSuccessMessage,
+      rights_agreement_text: settings.rightsAgreementText,
+      require_drive_folder: settings.requireDriveFolder,
+      require_promo_materials: settings.requirePromoMaterials,
+      require_lyrics: settings.requireLyrics,
+      min_release_days_notice: settings.minReleaseDaysNotice,
+      max_tracks_album: settings.maxTracksAlbum,
+      allowed_release_types: settings.allowedReleaseTypes,
+      custom_genres: settings.customGenres,
+      status_label_pending: settings.statusLabelPending,
+      status_label_approved: settings.statusLabelApproved,
+      status_label_scheduled: settings.statusLabelScheduled,
+      status_label_released: settings.statusLabelReleased,
+      status_label_rejected: settings.statusLabelRejected,
+      notification_email: settings.notificationEmail || null,
+      discord_webhook: settings.discordWebhook || null,
+      google_sheets_webhook: settings.googleSheetsWebhook || null,
     })
     .eq('settings_id', 1);
 
   if (error) throw new Error(error.message);
-
-  if (settings.googleSheetsWebhook) {
-    pushSettingsToSheet(settings);
-  }
 }
 
 // Public branding — anyone can read (RLS: public SELECT on settings)
