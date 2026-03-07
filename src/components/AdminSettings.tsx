@@ -5,7 +5,7 @@ import {
   Copy, Check, ChevronDown, ChevronUp, Tag, Sliders, FolderOpen, Users2, Activity, Database
 } from 'lucide-react';
 import { AdminSettings as AdminSettingsType, DEFAULT_ADMIN_SETTINGS } from '../types';
-import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook } from '../store';
+import { getAdminSettings, saveAdminSettings, saveAdminPassword, testDiscordWebhook, getAdminSession } from '../store';
 import { applyAccentColor } from '../utils/accentColor';
 import TeamManagement from './TeamManagement';
 import ActivityLog from './ActivityLog';
@@ -223,6 +223,12 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
 
   const daysLabel = (n: number) => n === 0 ? 'No minimum' : n === 1 ? '1 day' : `${n} days`;
 
+  const role = getAdminSession().role;
+  const isOwner = role === 'owner' || !role; // legacy logins treated as owner
+
+  // Tabs restricted to owner only
+  const OWNER_ONLY_TABS = ['security', 'discord', 'drive', 'sheets'] as const;
+
   const tabs = [
     { id: 'branding' as const, label: 'Branding', icon: Palette },
     { id: 'form' as const, label: 'Form', icon: FileText },
@@ -236,7 +242,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
     { id: 'team' as const, label: 'Team', icon: Users2 },
     { id: 'log' as const, label: 'Activity', icon: Activity },
     { id: 'backup' as const, label: 'Backup', icon: Database },
-  ];
+  ].filter(t => isOwner || !OWNER_ONLY_TABS.includes(t.id as typeof OWNER_ONLY_TABS[number]));
 
   if (loading) return (
     <div className="flex items-center justify-center py-20">
@@ -464,7 +470,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       )}
 
       {/* ── SECURITY ── */}
-      {activeTab === 'security' && (
+      {activeTab === 'security' && isOwner && (
         <div className="space-y-5">
           <Section title="Admin Credentials" desc="Your password is stored as a one-way hash — the real password is never saved anywhere">
 
@@ -564,7 +570,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       )}
 
       {/* ── DISCORD ── */}
-      {activeTab === 'discord' && (
+      {activeTab === 'discord' && isOwner && (
         <div className="space-y-5">
           <Section title="Discord Notifications" desc="Get a rich embed for every new release submission">
             <Field label="Webhook URL">
@@ -795,7 +801,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       )}
 
       {/* ── DRIVE PICKER ── */}
-      {activeTab === 'drive' && (
+      {activeTab === 'drive' && isOwner && (
         <div className="space-y-5">
           <Section title="Google Drive Uploader" desc="Let artists upload files directly from the submission form — no Drive link copying needed">
             <ToggleRow
@@ -894,7 +900,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
       )}
 
       {/* ── GOOGLE SHEETS ── */}
-      {activeTab === 'sheets' && (
+      {activeTab === 'sheets' && isOwner && (
         <div className="space-y-5">
           <Section title="Google Sheets Mirror" desc="Every new submission is appended as a row — Supabase stays the source of truth">
             <Field label="Apps Script Web App URL">
