@@ -27,6 +27,32 @@ function driveThumbnail(url: string, size = 300): string | null {
   return id ? `https://drive.google.com/thumbnail?id=${id}&sz=w${size}` : null;
 }
 
+// Best available artwork: direct image URL → Drive thumbnail → null
+function artworkSrc(imageUrl: string, driveLink: string): string | null {
+  if (imageUrl) return imageUrl;
+  return driveThumbnail(driveLink);
+}
+
+// "Artist1, Artist2" — main + collabs
+function formatArtists(mainArtist: string, collaborations: { name: string }[]): string {
+  return [mainArtist, ...collaborations.map(c => c.name).filter(Boolean)].join(', ');
+}
+
+// "Track Title (feat. X, Y)"
+function formatDisplayTitle(
+  releaseTitle: string,
+  releaseType: string,
+  tracks: { title: string }[],
+  features: { name: string }[]
+): string {
+  const featureNames = features.map(f => f.name).filter(Boolean);
+  const featSuffix = featureNames.length > 0 ? ` (feat. ${featureNames.join(', ')})` : '';
+  if (releaseType === 'single' && tracks.length === 1 && tracks[0]?.title) {
+    return `${tracks[0].title}${featSuffix}`;
+  }
+  return `${releaseTitle}${featSuffix}`;
+}
+
 export default function ReleaseDetail({ release: initialRelease, onBack }: Props) {
   const [editing, setEditing] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -155,8 +181,8 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
         <div className="flex items-start gap-4">
           {/* Artwork thumbnail or fallback icon */}
           <div className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/10">
-            {driveThumbnail(coverArtDriveLink) ? (
-              <img src={driveThumbnail(coverArtDriveLink)!} alt="Cover art"
+            {artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink) ? (
+              <img src={artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)!} alt="Cover art"
                 className="w-full h-full object-cover"
                 onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             ) : (
@@ -173,9 +199,11 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
               </div>
             ) : (
               <>
-                <h2 className="text-2xl font-bold truncate">{releaseTitle}</h2>
+                <h2 className="text-2xl font-bold truncate">
+                  {formatDisplayTitle(releaseTitle, releaseType, tracks, features)}
+                </h2>
                 <p className="text-zinc-400 truncate">
-                  {[mainArtist, ...collaborations.map(c => c.name).filter(Boolean)].join(', ')}
+                  {formatArtists(mainArtist, collaborations)}
                 </p>
               </>
             )}
@@ -232,8 +260,8 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                 </div>
                 <div>
                   <p className="text-xs text-zinc-500 mb-1">Cover Art Preview</p>
-                  {driveThumbnail(coverArtDriveLink) && (
-                    <img src={driveThumbnail(coverArtDriveLink)!} alt="Preview" className="w-20 h-20 rounded-lg object-cover border border-white/10 bg-zinc-900"
+                  {artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink) && (
+                    <img src={artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)!} alt="Preview" className="w-20 h-20 rounded-lg object-cover border border-white/10 bg-zinc-900"
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                   )}
                 </div>
