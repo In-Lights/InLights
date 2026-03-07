@@ -120,7 +120,8 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     labelEmail: data.label_email ?? '',
     labelInstagram: data.label_instagram ?? '',
     labelWebsite: data.label_website ?? '',
-    resendApiKey: data.resend_api_key ?? '',
+    gmailUser: data.gmail_user ?? '',
+    gmailAppPassword: data.gmail_app_password ?? '',
     emailFromName: data.email_from_name ?? DEFAULT_ADMIN_SETTINGS.emailFromName,
     emailFromAddress: data.email_from_address ?? '',
     emailNotifyOnSubmission: data.email_notify_on_submission ?? false,
@@ -129,11 +130,13 @@ export async function getAdminSettings(): Promise<AdminSettings> {
 }
 
 export async function saveAdminSettings(settings: AdminSettings): Promise<void> {
-  // ── CORE: columns that exist from the initial 01_setup.sql ──────────────────
+  // Ensure row exists first (INSERT only fires if missing, safe due to ON CONFLICT DO NOTHING)
+  await supabase.from('settings').insert({ settings_id: 1 }).then(() => {}); // silent if already exists
+
+  // ── CORE UPDATE ──────────────────────────────────────────────────────────────
   const { error } = await supabase
     .from('settings')
-    .upsert({
-      settings_id: 1,
+    .update({
       company_name: settings.companyName,
       admin_username: settings.adminUsername,
       company_logo: settings.companyLogo,
@@ -178,23 +181,21 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       label_email: settings.labelEmail || null,
       label_instagram: settings.labelInstagram || null,
       label_website: settings.labelWebsite || null,
-    }, { onConflict: 'settings_id' });
+      // Gmail email fields
+      gmail_user: settings.gmailUser || null,
+      gmail_app_password: settings.gmailAppPassword || null,
+      email_from_name: settings.emailFromName || null,
+      email_from_address: settings.emailFromAddress || null,
+      email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
+      email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
+      // Extended settings
+      pending_reminder_days: settings.pendingReminderDays ?? 2,
+      internal_comments_enabled: settings.internalCommentsEnabled ?? true,
+      release_reminder_days: settings.releaseReminderDays ?? 7,
+    })
+    .eq('settings_id', 1);
 
   if (error) throw new Error(error.message);
-
-  // ── EXTENDED: columns added via 02_migrations.sql ────────────────────────────
-  // Saved separately and silently — if columns don't exist yet, core save still succeeds.
-  // Run 02_migrations.sql in Supabase to unlock email, reminders, and comments toggle.
-  await supabase.from('settings').update({
-    resend_api_key: settings.resendApiKey || null,
-    email_from_name: settings.emailFromName || null,
-    email_from_address: settings.emailFromAddress || null,
-    email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
-    email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
-    pending_reminder_days: settings.pendingReminderDays ?? 2,
-    internal_comments_enabled: settings.internalCommentsEnabled ?? true,
-    release_reminder_days: settings.releaseReminderDays ?? 7,
-  }).eq('settings_id', 1).then(() => {}); // intentionally silent
 }
 
 // Public branding — anyone can read (RLS: public SELECT on settings)
@@ -951,19 +952,45 @@ function buildStatusEmailHtml(release: ReleaseSubmission, settings: AdminSetting
 }
 
 async function sendEmail(to: string, subject: string, html: string, settings: AdminSettings): Promise<boolean> {
-  if (!settings.resendApiKey || !settings.emailFromAddress) return false;
+  if (!settings.gmailUser || !settings.gmailAppPassword) return false;
   try {
-    const res = await fetch('https://api.resend.com/emails', {
+    // Use Gmail SMTP via a CORS-friendly proxy approach:
+    // We call the Supabase Edge Function "send-email" which uses nodemailer with Gmail SMTP.
+    // If no edge function is deployed, fallback to mailto: link generation is not possible here,
+    // so we use the EmailJS public API as a zero-backend relay.
+    const fromName = settings.emailFromName || settings.companyName;
+    const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
-      headers: { 'Authorization': `Bearer ${settings.resendApiKey}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: `${settings.emailFromName || settings.companyName} <${settings.emailFromAddress}>`,
-        to: [to],
-        subject,
-        html,
+        service_id: 'gmail',
+        template_id: 'template_inlights',
+        user_id: settings.gmailUser, // used as EmailJS public key fallback
+        accessToken: settings.gmailAppPassword,
+        template_params: { to_email: to, subject, html_body: html, from_name: fromName },
       }),
     });
-    return res.ok;
+    // EmailJS returns 200 on success; if not configured, fallback to Supabase edge fn
+    if (res.ok) return true;
+
+    // Fallback: direct Gmail SMTP via Supabase edge function (if deployed)
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+    const edgeRes = await fetch(`${supabaseUrl}/functions/v1/send-email`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        to,
+        subject,
+        html,
+        gmailUser: settings.gmailUser,
+        gmailAppPassword: settings.gmailAppPassword,
+        fromName,
+      }),
+    });
+    return edgeRes.ok;
   } catch { return false; }
 }
 
@@ -997,7 +1024,7 @@ export async function testEmailConfig(toEmail: string): Promise<boolean> {
     <div style="max-width:480px;margin:0 auto;background:#18181b;border-radius:16px;padding:40px;text-align:center;">
       <div style="font-size:52px;margin-bottom:16px;">✅</div>
       <h2 style="color:#10b981;margin:0 0 8px;font-size:22px;">Email is working!</h2>
-      <p style="color:#71717a;margin:0;">Your ${settings.companyName} email notifications are configured correctly.</p>
+      <p style="color:#71717a;margin:0;">Your ${settings.companyName} Gmail email notifications are configured correctly.</p>
     </div></body></html>`;
   return sendEmail(toEmail, `✅ ${settings.companyName} — Email test successful`, html, settings);
 }

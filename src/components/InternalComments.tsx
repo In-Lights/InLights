@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Send, Trash2, AtSign } from 'lucide-react';
-import { getComments, addComment, deleteComment, getAdminUsers, getAdminSession, type ReleaseComment } from '../store';
+import { getComments, addComment, deleteComment, getAdminUsers, getAdminSession, supabase, type ReleaseComment } from '../store';
 
 interface Props {
   releaseId: string;
@@ -21,6 +21,40 @@ export default function InternalComments({ releaseId }: Props) {
   useEffect(() => {
     getComments(releaseId).then(setComments);
     getAdminUsers().then(users => setAdminUsernames(users.map(u => u.username)));
+
+    // Realtime subscription — receive new comments from other admins instantly
+    const channel = supabase
+      .channel(`comments:${releaseId}`)
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'release_comments', filter: `release_id=eq.${releaseId}` },
+        (payload) => {
+          const r = payload.new as Record<string, unknown>;
+          const incoming: ReleaseComment = {
+            id: r.id as string,
+            releaseId: r.release_id as string,
+            authorUsername: r.author_username as string,
+            body: r.body as string,
+            mentions: (r.mentions as string[]) || [],
+            createdAt: r.created_at as string,
+          };
+          // Only add if it's not already in state (avoids duplicate from local addComment)
+          setComments(prev =>
+            prev.some(c => c.id === incoming.id) ? prev : [...prev, incoming]
+          );
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'release_comments', filter: `release_id=eq.${releaseId}` },
+        (payload) => {
+          const deleted = payload.old as { id: string };
+          setComments(prev => prev.filter(c => c.id !== deleted.id));
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [releaseId]);
 
   useEffect(() => {

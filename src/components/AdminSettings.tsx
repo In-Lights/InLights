@@ -604,23 +604,36 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
           <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5 flex gap-4">
             <Mail className="w-5 h-5 text-violet-400 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-violet-300 mb-1">Powered by Resend</p>
+              <p className="text-sm font-semibold text-violet-300 mb-1">Powered by Gmail</p>
               <p className="text-xs text-zinc-400 leading-relaxed">
-                Get a free API key at <a href="https://resend.com" target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">resend.com</a> — 3,000 emails/month free.
-                You'll need a verified sender domain or use <code className="bg-black/30 px-1 rounded text-violet-300">onboarding@resend.dev</code> for testing.
+                Use your Gmail account to send notifications. You'll need a{' '}
+                <a href="https://support.google.com/accounts/answer/185833" target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">
+                  Gmail App Password
+                </a>
+                {' '}— go to Google Account → Security → 2-Step Verification → App Passwords.
+                Your regular Gmail password will not work here.
               </p>
             </div>
           </div>
 
-          {/* API credentials */}
-          <Section title="API Credentials" desc="Connect your Resend account">
-            <Field label="Resend API Key">
+          {/* Gmail credentials */}
+          <Section title="Gmail Credentials" desc="Connect your Gmail account">
+            <Field label="Gmail Address" hint="The Gmail account to send from">
+              <input
+                type="email"
+                value={settings.gmailUser}
+                onChange={e => setSettings(p => ({ ...p, gmailUser: e.target.value }))}
+                placeholder="you@gmail.com"
+                className="input-dark w-full px-4 py-2.5 rounded-xl"
+              />
+            </Field>
+            <Field label="Gmail App Password" hint="16-character app password from Google Account settings">
               <div className="relative">
                 <input
                   type={showApiKey ? 'text' : 'password'}
-                  value={settings.resendApiKey}
-                  onChange={e => setSettings(p => ({ ...p, resendApiKey: e.target.value }))}
-                  placeholder="re_xxxxxxxxxxxxxxxxxxxx"
+                  value={settings.gmailAppPassword}
+                  onChange={e => setSettings(p => ({ ...p, gmailAppPassword: e.target.value }))}
+                  placeholder="xxxx xxxx xxxx xxxx"
                   className="input-dark w-full px-4 py-2.5 rounded-xl pr-10 font-mono text-sm"
                 />
                 <button
@@ -637,15 +650,6 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
                 value={settings.emailFromName}
                 onChange={e => setSettings(p => ({ ...p, emailFromName: e.target.value }))}
                 placeholder={settings.companyName || 'In Lights'}
-                className="input-dark w-full px-4 py-2.5 rounded-xl"
-              />
-            </Field>
-            <Field label="From Email Address" hint="Must be verified in your Resend account">
-              <input
-                type="email"
-                value={settings.emailFromAddress}
-                onChange={e => setSettings(p => ({ ...p, emailFromAddress: e.target.value }))}
-                placeholder="noreply@yourlabel.com"
                 className="input-dark w-full px-4 py-2.5 rounded-xl"
               />
             </Field>
@@ -685,16 +689,16 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
           </Section>
 
           {/* Test email */}
-          <Section title="Send Test Email" desc="Verify your setup is working">
+          <Section title="Send Test Email" desc="Verify your Gmail setup is working">
             <div className="flex gap-3 items-center">
               <button
                 onClick={async () => {
                   setTestingEmail(true); setEmailTestResult(null);
-                  const ok = await testEmailConfig(settings.notificationEmail || settings.emailFromAddress);
+                  const ok = await testEmailConfig(settings.notificationEmail || settings.gmailUser);
                   setEmailTestResult(ok ? 'success' : 'fail');
                   setTestingEmail(false);
                 }}
-                disabled={testingEmail || !settings.resendApiKey || !settings.emailFromAddress}
+                disabled={testingEmail || !settings.gmailUser || !settings.gmailAppPassword}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-semibold transition-colors"
               >
                 {testingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
@@ -704,7 +708,7 @@ export default function AdminSettingsPanel({ onSaved }: Props) {
                 <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="w-4 h-4" /> Email sent!</span>
               )}
               {emailTestResult === 'fail' && (
-                <span className="flex items-center gap-1.5 text-sm text-red-400"><XCircle className="w-4 h-4" /> Failed — check your API key and sender address</span>
+                <span className="flex items-center gap-1.5 text-sm text-red-400"><XCircle className="w-4 h-4" /> Failed — check Gmail address and App Password</span>
               )}
             </div>
           </Section>

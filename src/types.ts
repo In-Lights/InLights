@@ -127,8 +127,9 @@ export interface AdminSettings {
   discordWebhook: string;
   googleSheetsWebhook: string;
 
-  // Email notifications (Resend API)
-  resendApiKey: string;         // Resend API key
+  // Email notifications (Gmail)
+  gmailUser: string;          // Your Gmail address e.g. "you@gmail.com"
+  gmailAppPassword: string;   // Gmail App Password (not your regular password)
   emailFromName: string;        // "From" display name e.g. "In Lights"
   emailFromAddress: string;     // Verified sender e.g. "noreply@inlights.com"
   emailNotifyOnSubmission: boolean;   // Email label when new submission arrives
@@ -192,7 +193,8 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   notificationEmail: '',
   discordWebhook: '',
   googleSheetsWebhook: '',
-  resendApiKey: '',
+  gmailUser: '',
+  gmailAppPassword: '',
   emailFromName: 'In Lights',
   emailFromAddress: '',
   emailNotifyOnSubmission: false,
