@@ -34,11 +34,13 @@ import Dashboard from './components/Dashboard';
 import ReleaseDetail from './components/ReleaseDetail';
 import AdminSettingsPanel from './components/AdminSettings';
 import { ReleaseSubmission } from './types';
+import ArtistStatusPage from './components/ArtistStatusPage';
 
 type AdminView = 'dashboard' | 'settings' | 'detail';
 
 function App() {
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isStatus, setIsStatus] = useState(false);
   const [loggedIn, setLoggedIn] = useState(isAdminLoggedIn());
   const [adminView, setAdminView] = useState<AdminView>('dashboard');
   const [selectedRelease, setSelectedRelease] = useState<ReleaseSubmission | null>(null);
@@ -52,6 +54,7 @@ function App() {
     const checkHash = () => {
       const hash = window.location.hash;
       setIsAdmin(hash === '#admin' || hash.startsWith('#admin'));
+      setIsStatus(hash === '#status' || hash.startsWith('#status'));
     };
     checkHash();
     window.addEventListener('hashchange', checkHash);
@@ -102,6 +105,11 @@ function App() {
         <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
       </div>
     );
+  }
+
+  // PUBLIC: Artist Status Page
+  if (isStatus) {
+    return <ArtistStatusPage settings={publicBranding} />;
   }
 
   // PUBLIC: Submission Form
@@ -156,6 +164,9 @@ function App() {
         </nav>
 
         <div className="p-3 border-t border-white/5">
+          <a href="/#status" className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-zinc-500 hover:text-zinc-300 transition-all">
+            <Music2 className="w-4 h-4" /> Artist Status Page
+          </a>
           <a href="/" className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-zinc-500 hover:text-zinc-300 transition-all">
             <Music2 className="w-4 h-4" /> View Form
           </a>
@@ -168,37 +179,19 @@ function App() {
         </div>
       </aside>
 
-      {/* Mobile Header */}
+      {/* Mobile Header — just branding, no nav buttons */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-black/80 backdrop-blur-xl border-b border-white/5">
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            {adminSettings.companyLogo && (
-              <img src={adminSettings.companyLogo} alt={adminSettings.companyName} className="h-8 w-8 object-contain rounded-lg" />
-            )}
-            <span className="font-bold text-sm">{adminSettings.companyName}</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => { setAdminView('dashboard'); setSelectedRelease(null); }}
-              className={`p-2 rounded-lg ${adminView === 'dashboard' || adminView === 'detail' ? 'text-violet-400' : 'text-zinc-500'}`}
-            >
-              <LayoutDashboard className="w-5 h-5" />
-            </button>
-            <button
-              onClick={() => { setAdminView('settings'); setSelectedRelease(null); }}
-              className={`p-2 rounded-lg ${adminView === 'settings' ? 'text-violet-400' : 'text-zinc-500'}`}
-            >
-              <Settings className="w-5 h-5" />
-            </button>
-            <button onClick={handleLogout} className="p-2 rounded-lg text-zinc-500 hover:text-red-400">
-              <LogOut className="w-5 h-5" />
-            </button>
-          </div>
+        <div className="flex items-center px-4 py-3 gap-3">
+          {adminSettings.companyLogo && (
+            <img src={adminSettings.companyLogo} alt={adminSettings.companyName} className="h-8 w-8 object-contain rounded-lg" />
+          )}
+          <span className="font-bold text-sm">{adminSettings.companyName}</span>
+          <span className="ml-auto text-xs text-zinc-600">Admin</span>
         </div>
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 lg:ml-64 pt-16 lg:pt-0">
+      <main className="flex-1 lg:ml-64 pt-16 lg:pt-0 pb-20 lg:pb-0">
         <div className="p-4 md:p-8 max-w-7xl mx-auto">
           {adminView === 'dashboard' && (
             <Dashboard
@@ -220,6 +213,52 @@ function App() {
           )}
         </div>
       </main>
+
+      {/* Mobile Bottom Nav */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 bg-black/90 backdrop-blur-xl border-t border-white/5">
+        <div className="flex items-center justify-around px-2 py-2">
+          <button
+            onClick={() => { setAdminView('dashboard'); setSelectedRelease(null); }}
+            className={`flex flex-col items-center gap-1 px-5 py-2 rounded-xl transition-all ${
+              adminView === 'dashboard' || adminView === 'detail'
+                ? 'text-white'
+                : 'text-zinc-500'
+            }`}
+          >
+            {(adminView === 'dashboard' || adminView === 'detail') && (
+              <div className="absolute top-0 left-1/2 -translate-x-1/2 w-6 h-0.5 rounded-full" style={{ background: 'var(--accent)' }} />
+            )}
+            <LayoutDashboard className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Releases</span>
+          </button>
+
+          <button
+            onClick={() => { setAdminView('settings'); setSelectedRelease(null); }}
+            className={`flex flex-col items-center gap-1 px-5 py-2 rounded-xl transition-all ${
+              adminView === 'settings' ? 'text-white' : 'text-zinc-500'
+            }`}
+          >
+            <Settings className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Settings</span>
+          </button>
+
+          <a
+            href="/"
+            className="flex flex-col items-center gap-1 px-5 py-2 rounded-xl text-zinc-500"
+          >
+            <Music2 className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Form</span>
+          </a>
+
+          <button
+            onClick={handleLogout}
+            className="flex flex-col items-center gap-1 px-5 py-2 rounded-xl text-zinc-500 hover:text-red-400 transition-all"
+          >
+            <LogOut className="w-5 h-5" />
+            <span className="text-[10px] font-medium">Logout</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }

@@ -1,8 +1,10 @@
 import { useState } from 'react';
-import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2 } from 'lucide-react';
-import { ReleaseSubmission, ReleaseStatus, ReleaseType, Track, Collaborator, RELEASE_TYPE_LIMITS, GENRES } from '../types';
+import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square } from 'lucide-react';
+import { ReleaseSubmission, ReleaseStatus, ReleaseType, Track, Collaborator, RELEASE_TYPE_LIMITS, GENRES, ReleasePriority, ChecklistItem } from '../types';
 import { updateSubmission } from '../store';
 import { StatusBadge, ReleaseTypeBadge } from './ui/Badge';
+import Lightbox from './Lightbox';
+import AudioPlayer from './AudioPlayer';
 
 interface Props {
   release: ReleaseSubmission;
@@ -72,6 +74,18 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
   const [collaborations, setCollaborations] = useState<Collaborator[]>([...initialRelease.collaborations]);
   const [features, setFeatures] = useState<Collaborator[]>([...initialRelease.features]);
   const [tracks, setTracks] = useState<Track[]>([...initialRelease.tracks]);
+  const [upc, setUpc] = useState(initialRelease.upc || '');
+  const [priority, setPriority] = useState<ReleasePriority>(initialRelease.priority || 'normal');
+  const [checklist, setChecklist] = useState<ChecklistItem[]>(initialRelease.checklist || [
+    { id: '1', label: 'Cover art approved (3000×3000px)', done: false },
+    { id: '2', label: 'WAV files received', done: false },
+    { id: '3', label: 'Credits verified', done: false },
+    { id: '4', label: 'Metadata complete', done: false },
+    { id: '5', label: 'Rights confirmed', done: initialRelease.rightsConfirmed },
+    { id: '6', label: 'Distributed to platforms', done: false },
+  ]);
+  const [newCheckItem, setNewCheckItem] = useState('');
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -96,6 +110,9 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
         collaborations: collaborations.filter(c => c.name.trim()),
         features: features.filter(f => f.name.trim()),
         tracks,
+        upc: upc || undefined,
+        priority,
+        checklist,
       });
       setSaved(true);
       setEditing(false);
@@ -122,6 +139,8 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
     setCollaborations([...initialRelease.collaborations]);
     setFeatures([...initialRelease.features]);
     setTracks([...initialRelease.tracks]);
+    setUpc(initialRelease.upc || '');
+    setPriority(initialRelease.priority || 'normal');
     setEditing(false);
   };
 
@@ -179,12 +198,20 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
       {/* Title Card */}
       <div className="glass-card rounded-2xl p-6">
         <div className="flex items-start gap-4">
-          {/* Artwork thumbnail or fallback icon */}
-          <div className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/10">
+          {/* Artwork — clickable for lightbox */}
+          <div
+            className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/10 relative group cursor-pointer"
+            onClick={() => { if (artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)) setLightboxOpen(true); }}
+          >
             {artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink) ? (
-              <img src={artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)!} alt="Cover art"
-                className="w-full h-full object-cover"
-                onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <>
+                <img src={artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)!} alt="Cover art"
+                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <ZoomIn className="w-5 h-5 text-white" />
+                </div>
+              </>
             ) : (
               <div className="w-full h-full flex items-center justify-center">
                 <Music className="w-8 h-8 text-zinc-600" />
@@ -207,14 +234,32 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                 </p>
               </>
             )}
-            <div className="flex flex-wrap gap-3 mt-2">
+            <div className="flex flex-wrap gap-2 mt-2">
               <StatusBadge status={status} />
               <ReleaseTypeBadge type={releaseType} />
+              {priority !== 'normal' && (
+                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${
+                  priority === 'urgent' ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+                }`}>
+                  <Flag className="w-2.5 h-2.5" />
+                  {priority === 'urgent' ? 'URGENT' : 'LOW'}
+                </span>
+              )}
               <span className="text-xs text-zinc-500">ID: <span className="font-mono text-zinc-400">{initialRelease.id}</span></span>
             </div>
           </div>
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightboxOpen && artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink) && (
+        <Lightbox
+          src={artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)!}
+          alt={`${formatDisplayTitle(releaseTitle, releaseType, tracks, features)} — Cover Art`}
+          driveLink={coverArtDriveLink}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
@@ -422,6 +467,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                         <input type="text" value={track.lyricsBy} onChange={e => updateTrack(i, { lyricsBy: e.target.value })} placeholder="Lyrics by" className="input-dark px-3 py-2 rounded-lg text-sm" />
                         <input type="text" value={track.mixedBy} onChange={e => updateTrack(i, { mixedBy: e.target.value })} placeholder="Mixed by" className="input-dark px-3 py-2 rounded-lg text-sm" />
                         <input type="text" value={track.masteredBy} onChange={e => updateTrack(i, { masteredBy: e.target.value })} placeholder="Mastered by" className="input-dark px-3 py-2 rounded-lg text-sm" />
+                        <input type="text" value={track.isrc || ''} onChange={e => updateTrack(i, { isrc: e.target.value.toUpperCase() })} placeholder="ISRC code" className="input-dark col-span-2 px-3 py-2 rounded-lg text-sm font-mono" />
                       </div>
                     </div>
                   ) : (
@@ -446,6 +492,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                         {track.lyricsBy && <span>Lyrics: {track.lyricsBy}</span>}
                         {track.mixedBy && <span>Mixed: {track.mixedBy}</span>}
                         {track.masteredBy && <span>Mastered: {track.masteredBy}</span>}
+                        {track.isrc && <span className="col-span-2 font-mono text-zinc-400">ISRC: {track.isrc}</span>}
                       </div>
                       <div className="flex flex-wrap gap-3 mt-2">
                         {renderLink(track.wavDriveLink, 'WAV File')}
@@ -488,9 +535,36 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
 
         {/* Admin Sidebar */}
         <div className="space-y-6">
+          {/* Audio Player */}
+          <AudioPlayer tracks={tracks} releaseTitle={formatDisplayTitle(releaseTitle, releaseType, tracks, features)} />
           <div className="glass-card rounded-2xl p-6">
             <h3 className="font-bold mb-4">Admin Controls</h3>
             <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">Priority</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([['urgent','🔴','Urgent'],['normal','⚪','Normal'],['low','🔵','Low']] as const).map(([val, icon, lbl]) => (
+                    <button key={val} onClick={() => setPriority(val)}
+                      className={`py-1.5 rounded-lg border text-xs font-medium transition-all ${priority === val
+                        ? val === 'urgent' ? 'border-red-500 bg-red-500/15 text-red-400'
+                          : val === 'low' ? 'border-blue-500 bg-blue-500/15 text-blue-400'
+                          : 'border-zinc-600 bg-zinc-700 text-white'
+                        : 'border-zinc-800 text-zinc-600 hover:border-zinc-600'}`}>
+                      {icon} {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-zinc-400 mb-2">UPC / EAN Barcode</label>
+                <input
+                  type="text"
+                  value={upc}
+                  onChange={e => setUpc(e.target.value)}
+                  placeholder="e.g. 012345678905"
+                  className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono"
+                />
+              </div>
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Status</label>
                 <select
@@ -526,12 +600,17 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
           </div>
 
           <div className="glass-card rounded-2xl p-6">
-            <h3 className="font-bold mb-3 text-sm">Quick Info</h3>
-            <div className="space-y-2 text-sm">
+            <h3 className="font-bold mb-3 text-sm">Quick Info</h3>            <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-zinc-500">Type</span>
                 <span className="uppercase font-medium">{releaseType}</span>
               </div>
+              {upc && (
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">UPC</span>
+                  <span className="font-mono text-xs font-medium">{upc}</span>
+                </div>
+              )}
               <div className="flex justify-between">
                 <span className="text-zinc-500">Tracks</span>
                 <span className="font-medium">{tracks.length}</span>
@@ -558,6 +637,66 @@ export default function ReleaseDetail({ release: initialRelease, onBack }: Props
                 <span className="text-zinc-500">Updated</span>
                 <span className="font-medium text-xs">{new Date(initialRelease.updatedAt).toLocaleDateString()}</span>
               </div>
+            </div>
+          </div>
+
+          {/* Release Checklist */}
+          <div className="glass-card rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-bold text-sm">Release Checklist</h3>
+              <span className="text-xs text-zinc-500">
+                {checklist.filter(i => i.done).length}/{checklist.length}
+              </span>
+            </div>
+            {/* Progress bar */}
+            <div className="h-1.5 bg-zinc-800 rounded-full mb-4 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: checklist.length ? `${(checklist.filter(i => i.done).length / checklist.length) * 100}%` : '0%',
+                  background: 'var(--accent)',
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              {checklist.map(item => (
+                <button
+                  key={item.id}
+                  onClick={async () => {
+                    const updated = checklist.map(i => i.id === item.id ? { ...i, done: !i.done } : i);
+                    setChecklist(updated);
+                    try { await updateSubmission(initialRelease.id, { checklist: updated }); } catch {}
+                  }}
+                  className="w-full flex items-center gap-2.5 text-left group"
+                >
+                  {item.done
+                    ? <CheckSquare className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    : <Square className="w-4 h-4 text-zinc-600 flex-shrink-0 group-hover:text-zinc-400 transition-colors" />
+                  }
+                  <span className={`text-xs transition-colors ${item.done ? 'line-through text-zinc-600' : 'text-zinc-300 group-hover:text-white'}`}>
+                    {item.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+            {/* Add custom item */}
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                value={newCheckItem}
+                onChange={e => setNewCheckItem(e.target.value)}
+                onKeyDown={async e => {
+                  if (e.key === 'Enter' && newCheckItem.trim()) {
+                    const newItem: ChecklistItem = { id: Date.now().toString(), label: newCheckItem.trim(), done: false };
+                    const updated = [...checklist, newItem];
+                    setChecklist(updated);
+                    setNewCheckItem('');
+                    try { await updateSubmission(initialRelease.id, { checklist: updated }); } catch {}
+                  }
+                }}
+                placeholder="Add task… (Enter)"
+                className="input-dark flex-1 px-3 py-1.5 rounded-lg text-xs"
+              />
             </div>
           </div>
         </div>

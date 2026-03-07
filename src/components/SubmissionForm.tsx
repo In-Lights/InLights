@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Music, User, Disc3, Upload, ChevronRight, ChevronLeft,
   Plus, Trash2, CheckCircle2, AlertCircle, Calendar, Clock,
@@ -8,7 +8,7 @@ import {
   Track, Collaborator, ReleaseType, RELEASE_TYPE_LIMITS, GENRES,
   ReleaseSubmission, AdminSettings, DEFAULT_ADMIN_SETTINGS
 } from '../types';
-import { addSubmission } from '../store';
+import { addSubmission, checkForDuplicates, saveFormDraft, loadFormDraft, clearFormDraft, type DuplicateWarning } from '../store';
 import DrivePickerButton from './DrivePickerButton';
 
 // ── date utils ───────────────────────────────────────────────
@@ -107,6 +107,61 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
   const [driveFolderLink, setDriveFolderLink] = useState('');
   const [rightsConfirmed, setRightsConfirmed] = useState(false);
 
+  // ── auto-save draft ──
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [showDraftBanner, setShowDraftBanner] = useState(false);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Restore draft on mount
+  useEffect(() => {
+    const draft = loadFormDraft();
+    if (!draft) return;
+    setShowDraftBanner(true);
+  }, []);
+
+  const restoreDraft = () => {
+    const draft = loadFormDraft();
+    if (!draft) return;
+    if (draft.mainArtist) setMainArtist(draft.mainArtist as string);
+    if (draft.collaborations) setCollaborations(draft.collaborations as Collaborator[]);
+    if (draft.features) setFeatures(draft.features as Collaborator[]);
+    if (draft.releaseType) setReleaseType(draft.releaseType as ReleaseType);
+    if (draft.releaseTitle) setReleaseTitle(draft.releaseTitle as string);
+    if (draft.releaseDate) { setReleaseDate(draft.releaseDate as string); }
+    if (draft.explicitContent !== undefined) setExplicitContent(draft.explicitContent as boolean);
+    if (draft.genre) setGenre(draft.genre as string);
+    if (draft.coverArtDriveLink) setCoverArtDriveLink(draft.coverArtDriveLink as string);
+    if (draft.tracks) setTracks(draft.tracks as Track[]);
+    if (draft.promoDriveLink) setPromoDriveLink(draft.promoDriveLink as string);
+    if (draft.driveFolderLink) setDriveFolderLink(draft.driveFolderLink as string);
+    if (draft.step !== undefined) setStep(draft.step as number);
+    setDraftRestored(true);
+    setShowDraftBanner(false);
+  };
+
+  // Auto-save on any field change (debounced 2s)
+  const triggerAutoSave = () => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      saveFormDraft({ mainArtist, collaborations, features, releaseType, releaseTitle, releaseDate, explicitContent, genre, coverArtDriveLink, tracks, promoDriveLink, driveFolderLink, step });
+    }, 2000);
+  };
+
+  // ── duplicate detection ──
+  const [duplicates, setDuplicates] = useState<DuplicateWarning[]>([]);
+  const [dupChecked, setDupChecked] = useState(false);
+  const dupTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!mainArtist.trim() || !releaseTitle.trim()) { setDuplicates([]); setDupChecked(false); return; }
+    if (dupTimer.current) clearTimeout(dupTimer.current);
+    dupTimer.current = setTimeout(async () => {
+      const results = await checkForDuplicates(mainArtist, releaseTitle);
+      setDuplicates(results);
+      setDupChecked(true);
+    }, 800);
+  }, [mainArtist, releaseTitle]);
+
   const limits = getLimits(releaseType);
 
   // ── computed drive context ──
@@ -195,6 +250,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
       const result = await addSubmission(data);
       setSubmissionId(result.id);
       setSubmitted(true);
+      clearFormDraft();
       onSubmitted?.();
     } catch {
       setSubmitError('Submission failed. Please check your connection and try again.');
@@ -209,6 +265,8 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
     setGenre(''); setCoverArtDriveLink('');
     setTracks([emptyTrack()]); setPromoDriveLink(''); setDriveFolderLink('');
     setRightsConfirmed(false); setSubmitError('');
+    setDuplicates([]); setDupChecked(false); setDraftRestored(false);
+    clearFormDraft();
   };
 
   const steps = [
@@ -254,6 +312,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
             <p className="text-lg font-mono font-bold accent-text">{submissionId}</p>
           </div>
           <button onClick={resetForm} className="btn-primary px-6 py-3 rounded-xl">Submit Another Release</button>
+          <a href="#status" className="block text-sm text-zinc-500 hover:text-zinc-300 mt-3 transition-colors">Track your release status →</a>
         </div>
       </div>
     );
@@ -271,10 +330,22 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
             <h1 className="font-bold text-lg">{settings.companyName}</h1>
             <p className="text-xs text-zinc-500">{settings.formWelcomeText}</p>
           </div>
+          <a href="#status" className="ml-auto text-xs text-zinc-500 hover:text-zinc-300 transition-colors">Check release status →</a>
         </div>
       </header>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
+        {/* Draft restore banner */}
+        {showDraftBanner && (
+          <div className="mb-6 flex items-center gap-3 bg-violet-500/10 border border-violet-500/30 rounded-xl px-4 py-3 text-sm fade-in">
+            <span className="text-violet-300 flex-1">📝 You have an unsaved draft — want to restore it?</span>
+            <button onClick={restoreDraft} className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-500 transition-all">Restore</button>
+            <button onClick={() => { clearFormDraft(); setShowDraftBanner(false); }} className="px-3 py-1.5 rounded-lg border border-white/10 text-zinc-400 text-xs hover:text-white transition-all">Discard</button>
+          </div>
+        )}
+        {draftRestored && (
+          <div className="mb-4 text-xs text-emerald-400 text-center fade-in">✓ Draft restored</div>
+        )}
         {/* Stepper */}
         <div className="flex items-center justify-between mb-10">
           {steps.map((s, i) => (
@@ -305,7 +376,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
 
             <div className="glass-card rounded-2xl p-6">
               <label className="block text-sm font-semibold mb-2">Main Artist <span className="text-red-400">*</span></label>
-              <input type="text" value={mainArtist} onChange={e => setMainArtist(e.target.value)}
+              <input type="text" value={mainArtist} onChange={e => { setMainArtist(e.target.value); triggerAutoSave(); }}
                 placeholder="Artist or band name" className="input-dark w-full px-4 py-3 rounded-xl" />
             </div>
 
@@ -431,8 +502,21 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
               {/* Title */}
               <div>
                 <label className="block text-sm font-semibold mb-2">Release Title <span className="text-red-400">*</span></label>
-                <input type="text" value={releaseTitle} onChange={e => setReleaseTitle(e.target.value)}
+                <input type="text" value={releaseTitle} onChange={e => { setReleaseTitle(e.target.value); triggerAutoSave(); }}
                   placeholder="Title of the release" className="input-dark w-full px-4 py-3 rounded-xl" />
+                {/* Duplicate warning */}
+                {dupChecked && duplicates.length > 0 && (
+                  <div className="mt-3 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 space-y-2 fade-in">
+                    <p className="text-xs font-semibold text-amber-400 flex items-center gap-1.5">⚠️ Possible duplicate detected</p>
+                    {duplicates.map(d => (
+                      <div key={d.id} className="text-xs text-zinc-400 flex justify-between items-center">
+                        <span><span className="text-white font-medium">{d.mainArtist}</span> — {d.releaseTitle}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${d.similarity === 'exact' ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'}`}>{d.similarity}</span>
+                      </div>
+                    ))}
+                    <p className="text-[11px] text-zinc-600">You can still submit — just double-check this isn't a duplicate.</p>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -636,6 +720,12 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                           placeholder={lbl + (settings.requireMixMaster && (k === 'mixedBy' || k === 'masteredBy') ? ' *' : '')}
                           className="input-dark px-3 py-2.5 rounded-lg text-sm" />
                       ))}
+                    </div>
+                    <div className="mt-2.5">
+                      <input type="text" value={track.isrc || ''}
+                        onChange={e => updateTrack(idx, { isrc: e.target.value.toUpperCase() })}
+                        placeholder="ISRC (e.g. USRC17607839) — optional, admin can fill later"
+                        className="input-dark w-full px-3 py-2.5 rounded-lg text-sm font-mono" />
                     </div>
                   </div>
                 </div>

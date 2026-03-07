@@ -252,6 +252,9 @@ function rowToRelease(row: Record<string, unknown>): ReleaseSubmission {
     driveFolderLink: (row.drive_folder_link as string) ?? undefined,
     rightsConfirmed: row.rights_confirmed as boolean,
     labelNotes: (row.label_notes as string) ?? undefined,
+    upc: (row.upc as string) ?? undefined,
+    priority: (row.priority as ReleaseSubmission['priority']) ?? 'normal',
+    checklist: (row.checklist as ReleaseSubmission['checklist']) ?? [],
   };
 }
 
@@ -274,6 +277,9 @@ function releaseToRow(release: Partial<ReleaseSubmission> & { id?: string }) {
   if (release.driveFolderLink !== undefined) row.drive_folder_link = release.driveFolderLink;
   if (release.rightsConfirmed !== undefined) row.rights_confirmed = release.rightsConfirmed;
   if (release.labelNotes !== undefined) row.label_notes = release.labelNotes;
+  if (release.upc !== undefined) row.upc = release.upc;
+  if (release.priority !== undefined) row.priority = release.priority;
+  if (release.checklist !== undefined) row.checklist = release.checklist;
   return row;
 }
 
@@ -340,6 +346,86 @@ export async function updateSubmissionStatus(
 export async function deleteSubmission(id: string): Promise<void> {
   const { error } = await supabase.from('releases').delete().eq('id', id);
   if (error) throw new Error(error.message);
+}
+
+// ============================================================
+// Duplicate Detector
+// ============================================================
+export interface DuplicateWarning {
+  id: string;
+  mainArtist: string;
+  releaseTitle: string;
+  status: string;
+  createdAt: string;
+  similarity: 'exact' | 'similar';
+}
+
+function normalize(s: string) {
+  return s.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i-1] === b[j-1] ? dp[i-1][j-1] : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+}
+
+function isSimilar(a: string, b: string): boolean {
+  const na = normalize(a), nb = normalize(b);
+  if (na === nb) return true;
+  const longer = Math.max(na.length, nb.length);
+  if (longer === 0) return true;
+  return levenshtein(na, nb) / longer < 0.3;
+}
+
+export async function checkForDuplicates(
+  artist: string, title: string, excludeId?: string
+): Promise<DuplicateWarning[]> {
+  const { data } = await supabase.from('releases').select('id, main_artist, release_title, status, created_at');
+  if (!data) return [];
+  return data
+    .filter(r => r.id !== excludeId)
+    .filter(r => isSimilar(r.main_artist, artist) && isSimilar(r.release_title, title))
+    .map(r => ({
+      id: r.id,
+      mainArtist: r.main_artist,
+      releaseTitle: r.release_title,
+      status: r.status,
+      createdAt: r.created_at,
+      similarity: normalize(r.main_artist) === normalize(artist) && normalize(r.release_title) === normalize(title)
+        ? 'exact' : 'similar',
+    }));
+}
+
+// ============================================================
+// Form Auto-save (localStorage keyed by label)
+// ============================================================
+const AUTOSAVE_KEY = 'release_form_draft';
+
+export function saveFormDraft(data: Record<string, unknown>): void {
+  try { localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ ...data, savedAt: Date.now() })); } catch {}
+}
+
+export function loadFormDraft(): (Record<string, unknown> & { savedAt?: number }) | null {
+  try {
+    const raw = localStorage.getItem(AUTOSAVE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    // Expire after 48 hours
+    if (parsed.savedAt && Date.now() - parsed.savedAt > 48 * 3600 * 1000) {
+      localStorage.removeItem(AUTOSAVE_KEY);
+      return null;
+    }
+    return parsed;
+  } catch { return null; }
+}
+
+export function clearFormDraft(): void {
+  try { localStorage.removeItem(AUTOSAVE_KEY); } catch {}
 }
 
 // ============================================================

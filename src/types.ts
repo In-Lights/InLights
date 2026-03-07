@@ -1,5 +1,12 @@
 export type ReleaseType = 'single' | 'ep' | 'album';
 export type ReleaseStatus = 'pending' | 'approved' | 'scheduled' | 'released' | 'rejected';
+export type ReleasePriority = 'urgent' | 'normal' | 'low';
+
+export interface ChecklistItem {
+  id: string;
+  label: string;
+  done: boolean;
+}
 
 export interface PlatformLinks {
   spotify?: string;
@@ -25,6 +32,7 @@ export interface Track {
   lyricsBy: string;
   mixedBy: string;
   masteredBy: string;
+  isrc?: string;
 }
 
 export interface ReleaseSubmission {
@@ -47,6 +55,9 @@ export interface ReleaseSubmission {
   driveFolderLink?: string;
   rightsConfirmed: boolean;
   labelNotes?: string;
+  upc?: string;
+  priority?: ReleasePriority;
+  checklist?: ChecklistItem[];
 }
 
 export interface AdminSettings {

@@ -1,8 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus } from '../types';
-import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV } from '../store';
+import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV, updateSubmission } from '../store';
 import { ReleaseTypeBadge } from './ui/Badge';
+import ExportPDFButton from './ExportPDF';
 
 interface Props {
   onViewRelease: (release: ReleaseSubmission) => void;
@@ -50,6 +51,45 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
   const [submissions, setSubmissions] = useState<ReleaseSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  const allFilteredIds = useMemo(() => filtered?.map(r => r.id) ?? [], []);
+  const allSelected = selected.size > 0 && filtered.length > 0 && filtered.every(r => selected.has(r.id));
+
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const toggleSelectAll = () => {
+    if (allSelected) setSelected(new Set());
+    else setSelected(new Set(filtered.map(r => r.id)));
+  };
+
+  const handleBulkStatus = async (status: ReleaseStatus) => {
+    if (selected.size === 0) return;
+    setBulkLoading(true);
+    try {
+      await Promise.all([...selected].map(id => updateSubmissionStatus(id, status)));
+      setSubmissions(prev => prev.map(r => selected.has(r.id) ? { ...r, status } : r));
+      setSelected(new Set());
+    } catch { alert('Some updates failed. Please retry.'); }
+    finally { setBulkLoading(false); }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`Delete ${selected.size} release${selected.size !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    setBulkLoading(true);
+    try {
+      await Promise.all([...selected].map(id => deleteSubmission(id)));
+      setSubmissions(prev => prev.filter(r => !selected.has(r.id)));
+      setSelected(new Set());
+    } catch { alert('Some deletions failed. Please retry.'); }
+    finally { setBulkLoading(false); }
+  };
 
   useEffect(() => {
     setLoading(true);
@@ -172,8 +212,9 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white text-sm transition-all"
           >
             <Download className="w-4 h-4" />
-            <span className="hidden sm:inline">Export</span>
+            <span className="hidden sm:inline">CSV</span>
           </button>
+          <ExportPDFButton releases={filtered} />
           <button
             onClick={onRefresh}
             className="p-2.5 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white transition-all"
@@ -183,6 +224,27 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
           </button>
         </div>
       </div>
+
+      {/* Bulk Actions Bar */}
+      {selected.size > 0 && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-violet-500/10 border border-violet-500/25 fade-in flex-wrap">
+          <span className="text-sm font-medium text-violet-300">{selected.size} selected</span>
+          <div className="flex items-center gap-2 flex-wrap flex-1">
+            {(['approved','scheduled','released','rejected','pending'] as ReleaseStatus[]).map(s => (
+              <button key={s} onClick={() => handleBulkStatus(s)} disabled={bulkLoading}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-white/10 text-zinc-300 hover:bg-white/10 transition-all disabled:opacity-50 capitalize">
+                → {s}
+              </button>
+            ))}
+            <button onClick={handleBulkDelete} disabled={bulkLoading}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all disabled:opacity-50 ml-auto">
+              {bulkLoading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : <Trash2 className="w-3 h-3 inline mr-1" />}
+              Delete all
+            </button>
+          </div>
+          <button onClick={() => setSelected(new Set())} className="text-zinc-500 hover:text-white text-xs">✕ Clear</button>
+        </div>
+      )}
 
       {/* Table */}
       {loading ? (
@@ -196,8 +258,20 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
         </div>
       ) : (
         <div className="space-y-3">
+          {/* Select all row */}
+          <div className="flex items-center gap-3 px-1">
+            <button onClick={toggleSelectAll} className="p-1 text-zinc-500 hover:text-white transition-colors">
+              {allSelected ? <CheckSquare className="w-4 h-4 accent-text" /> : <Square className="w-4 h-4" />}
+            </button>
+            <span className="text-xs text-zinc-600">{allSelected ? 'Deselect all' : `Select all (${filtered.length})`}</span>
+          </div>
+
           {filtered.map(release => (
-            <div key={release.id} className="glass-card rounded-xl p-4 flex items-center gap-4 hover:bg-white/[0.03] transition-all">
+            <div key={release.id} className={`glass-card rounded-xl p-4 flex items-center gap-3 hover:bg-white/[0.03] transition-all ${selected.has(release.id) ? 'border border-violet-500/30 bg-violet-500/[0.04]' : ''}`}>
+              {/* Checkbox */}
+              <button onClick={() => toggleSelect(release.id)} className="p-1 text-zinc-600 hover:text-white transition-colors flex-shrink-0">
+                {selected.has(release.id) ? <CheckSquare className="w-4 h-4 accent-text" /> : <Square className="w-4 h-4" />}
+              </button>
               {/* Artwork thumbnail */}
               <div className="w-12 h-12 rounded-lg flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/5">
                 {artworkSrc(release) ? (
@@ -215,6 +289,11 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh }: Prop
                   <ReleaseTypeBadge type={release.releaseType} />
                   {release.explicitContent && (
                     <span className="text-xs bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded">E</span>
+                  )}
+                  {release.priority === 'urgent' && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/30">
+                      <Flag className="w-2.5 h-2.5" /> URGENT
+                    </span>
                   )}
                 </div>
                 <p className="font-semibold truncate">{formatTitle(release)}</p>
