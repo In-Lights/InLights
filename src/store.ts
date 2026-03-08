@@ -374,6 +374,11 @@ export async function updateSubmission(
   const { error } = await supabase.from('releases').update(row).eq('id', id);
   if (error) throw new Error(error.message);
   if (label) await logActivity('Edited release', label, id, { fields: Object.keys(updates) });
+  // Live sync to Google Sheets on every edit
+  try {
+    const { data } = await supabase.from('releases').select('*').eq('id', id).single();
+    if (data) syncStatusToSheets(rowToRelease(data)); // non-blocking
+  } catch {}
 }
 
 export async function updateSubmissionStatus(
@@ -718,62 +723,55 @@ export function logoutAdmin(): void {
 // ============================================================
 // Google Sheets — full sync mirror
 // ============================================================
+// ── Google Sheets sync payload builder ───────────────────────────────────────
+function buildSheetsPayload(action: string, release: ReleaseSubmission) {
+  // Collect all ISRCs from tracks
+  const isrcList = release.tracks
+    .map(t => t.isrc?.trim())
+    .filter(Boolean)
+    .join(', ');
+
+  return {
+    action,                                            // 'upsertRelease'
+    id: release.id,
+    title: release.releaseTitle,
+    artist: release.mainArtist,
+    upc: release.upc ?? '',
+    isrc: isrcList,
+    // Extended fields
+    releaseType: release.releaseType,
+    genre: release.genre ?? '',
+    releaseDate: release.releaseDate ?? '',
+    status: release.status,
+    explicit: release.explicitContent ? 'Yes' : 'No',
+    tracks: release.tracks.map(t => t.title).join(', '),
+    trackCount: release.tracks.length,
+    collaborations: release.collaborations?.map(c => c.name).join(', ') ?? '',
+    features: release.features?.map(f => f.name).join(', ') ?? '',
+    coverArtLink: release.coverArtDriveLink ?? release.coverArtImageUrl ?? '',
+    driveFolderLink: release.driveFolderLink ?? '',
+    promoLink: release.promoDriveLink ?? '',
+    submittedAt: release.createdAt,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Single upsert function — used for new submissions AND every edit
 async function sendToGoogleSheets(release: ReleaseSubmission): Promise<void> {
   const settings = await getAdminSettings();
   if (!settings.googleSheetsWebhook) return;
   try {
-    // Check for existing row to flag duplicates
-    const existing = await getSubmissions();
-    const isDuplicate = existing.filter(r => r.id !== release.id).some(
-      r => r.mainArtist.toLowerCase() === release.mainArtist.toLowerCase() &&
-           r.releaseTitle.toLowerCase() === release.releaseTitle.toLowerCase()
-    );
-
     await fetch(settings.googleSheetsWebhook, {
       method: 'POST', mode: 'no-cors',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'newRelease',
-        id: release.id,
-        mainArtist: release.mainArtist,
-        releaseTitle: release.releaseTitle,
-        releaseType: release.releaseType,
-        genre: release.genre,
-        releaseDate: release.releaseDate,
-        explicit: release.explicitContent ? 'Yes' : 'No',
-        tracks: release.tracks.map(t => t.title).join(', '),
-        trackCount: release.tracks.length,
-        collaborations: release.collaborations?.map(c => c.name).join(', ') ?? '',
-        features: release.features?.map(f => f.name).join(', ') ?? '',
-        coverArtLink: release.coverArtDriveLink ?? release.coverArtImageUrl ?? '',
-        wavLinks: release.tracks.map(t => t.wavDriveLink || '').filter(Boolean).join(', '),
-        driveFolderLink: release.driveFolderLink ?? '',
-        promoLink: release.promoDriveLink ?? '',
-        status: release.status,
-        submittedAt: release.createdAt,
-        isDuplicate: isDuplicate ? 'YES ⚠️' : '',
-      }),
+      body: JSON.stringify(buildSheetsPayload('upsertRelease', release)),
     });
   } catch {}
 }
 
+// Called on every save/edit from dashboard — keeps sheet live
 export async function syncStatusToSheets(release: ReleaseSubmission): Promise<void> {
-  const settings = await getAdminSettings();
-  if (!settings.googleSheetsWebhook) return;
-  try {
-    await fetch(settings.googleSheetsWebhook, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'updateStatus',
-        id: release.id,
-        mainArtist: release.mainArtist,
-        releaseTitle: release.releaseTitle,
-        status: release.status,
-        updatedAt: new Date().toISOString(),
-      }),
-    });
-  } catch {}
+  await sendToGoogleSheets(release);
 }
 
 export async function syncAllToSheets(): Promise<{ sent: number }> {

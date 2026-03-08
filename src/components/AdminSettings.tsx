@@ -181,6 +181,110 @@ function SyncAllSheetsButton({ webhookUrl }: { webhookUrl: string }) {
   );
 }
 
+const SHEETS_SCRIPT = `function doPost(e) {
+  try {
+    var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Releases') || ss.insertSheet('Releases');
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At']);
+      sheet.getRange(1,1,1,19).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+      sheet.setFrozenRows(1);
+    }
+    if (data.action === 'upsertRelease') {
+      var ids = sheet.getLastRow() > 1 ? sheet.getRange(2,1,sheet.getLastRow()-1,1).getValues().flat() : [];
+      var rowIndex = ids.indexOf(data.id);
+      var rowData = [data.id,data.title,data.artist,data.upc||'',data.isrc||'',data.releaseType,data.genre,data.releaseDate,data.status,data.explicit,data.tracks,data.trackCount,data.collaborations,data.features,data.coverArtLink,data.driveFolderLink,data.promoLink,data.submittedAt,data.updatedAt];
+      var colors = {approved:'#d4edda',rejected:'#f8d7da',scheduled:'#cce5ff',released:'#d1ecf1',pending:'#fff3cd',under_review:'#e2d9f3'};
+      if (rowIndex === -1) {
+        sheet.appendRow(rowData);
+        sheet.getRange(sheet.getLastRow(),9).setBackground(colors[data.status]||'#ffffff');
+      } else {
+        var r = rowIndex + 2;
+        sheet.getRange(r,1,1,rowData.length).setValues([rowData]);
+        sheet.getRange(r,9).setBackground(colors[data.status]||'#ffffff');
+      }
+    }
+    return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({error:err.message})).setMimeType(ContentService.MimeType.JSON);
+  }
+}`;
+
+const SHEET_COLUMNS = ['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At'];
+
+function SheetsTab({ settings, setSettings }: { settings: AdminSettingsType; setSettings: React.Dispatch<React.SetStateAction<AdminSettingsType>> }) {
+  return (
+    <div className="space-y-5">
+      <div className="rounded-2xl border border-violet-500/20 bg-violet-500/5 p-5 flex gap-4">
+        <span className="text-violet-400 mt-0.5 text-lg flex-shrink-0">📊</span>
+        <div>
+          <p className="text-sm font-semibold text-violet-300 mb-1">Live Google Sheets Sync</p>
+          <p className="text-xs text-zinc-400 leading-relaxed">
+            Every new submission and every edit in the dashboard syncs to your sheet automatically.
+            Columns include <strong className="text-zinc-300">ID, Title, Artist, UPC, ISRC</strong> + full metadata. Status cells are color-coded.
+          </p>
+        </div>
+      </div>
+
+      <Section title="Step 1 — Create the Apps Script" desc="Open your Google Sheet → Extensions → Apps Script → paste → deploy">
+        <div className="bg-zinc-950 border border-white/10 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-2 border-b border-white/5">
+            <span className="text-xs text-zinc-500 font-mono">Code.gs</span>
+            <CopyCodeButton code={SHEETS_SCRIPT} />
+          </div>
+          <pre className="p-4 text-xs text-zinc-300 overflow-x-auto leading-relaxed font-mono whitespace-pre max-h-48 overflow-y-auto">{SHEETS_SCRIPT}</pre>
+        </div>
+        <ol className="mt-4 space-y-2 text-xs text-zinc-400 list-none">
+          {([
+            <span>Open your Google Sheet → <strong className="text-zinc-200">Extensions → Apps Script</strong></span>,
+            <span>Delete all existing code, paste the script above</span>,
+            <span>Click <strong className="text-zinc-200">Deploy → New deployment</strong></span>,
+            <span>Type: <strong className="text-zinc-200">Web app</strong> · Execute as: <strong className="text-zinc-200">Me</strong> · Who has access: <strong className="text-zinc-200">Anyone</strong></span>,
+            <span>Click <strong className="text-zinc-200">Deploy</strong> → authorize → copy the <strong className="text-zinc-200">Web app URL</strong></span>,
+          ] as React.ReactNode[]).map((step, i) => (
+            <li key={i} className="flex gap-3">
+              <span className="flex-shrink-0 w-5 h-5 rounded-full bg-violet-500/20 text-violet-400 text-[10px] font-bold flex items-center justify-center">{i + 1}</span>
+              <span className="leading-relaxed">{step}</span>
+            </li>
+          ))}
+        </ol>
+      </Section>
+
+      <Section title="Step 2 — Paste your Web App URL" desc="From the Apps Script deployment dialog">
+        <Field label="Apps Script Web App URL" hint="https://script.google.com/macros/s/.../exec">
+          <input
+            type="url"
+            value={settings.googleSheetsWebhook ?? ''}
+            onChange={e => setSettings(p => ({ ...p, googleSheetsWebhook: e.target.value }))}
+            placeholder="https://script.google.com/macros/s/.../exec"
+            className="input-dark w-full px-4 py-2.5 rounded-xl font-mono text-sm"
+          />
+        </Field>
+      </Section>
+
+      <Section title="Sheet Columns" desc="Your sheet will be set up with these columns automatically">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+          {SHEET_COLUMNS.map((col, i) => (
+            <div key={col} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06]">
+              <span className="text-[10px] text-zinc-600 font-mono w-5">{String.fromCharCode(65 + i)}</span>
+              <span className="text-xs text-zinc-300 font-medium">{col}</span>
+              {(col === 'UPC' || col === 'ISRC') && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-violet-500/20 text-violet-400 ml-auto">key</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="Backfill Existing Releases" desc="First-time only — pushes all current releases to the sheet">
+        <SyncAllSheetsButton webhookUrl={settings.googleSheetsWebhook ?? ''} />
+        <p className="text-xs text-zinc-600 mt-2">New submissions and edits sync automatically — this is only needed once to populate the sheet with existing data.</p>
+      </Section>
+    </div>
+  );
+}
+
 export default function AdminSettingsPanel({ onSaved }: Props) {
   const [settings, setSettings] = useState<AdminSettingsType>({ ...DEFAULT_ADMIN_SETTINGS });
   const [loading, setLoading] = useState(true);
@@ -1240,99 +1344,19 @@ function ok(msg) {
 
       {/* ── GOOGLE SHEETS ── */}
       {activeTab === 'sheets' && isOwner && (
-        <div className="space-y-5">
-          <Section title="Google Sheets Sync" desc="New submissions auto-append. Status changes auto-update. Use Sync All to backfill existing releases.">
-            <Field label="Apps Script Web App URL">
-              <input type="url" value={settings.googleSheetsWebhook} onChange={e => set('googleSheetsWebhook', e.target.value)}
-                placeholder="https://script.google.com/macros/s/.../exec" className="input-dark w-full px-4 py-3 rounded-xl font-mono text-sm" />
-            </Field>
-
-            {settings.googleSheetsWebhook ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <button onClick={handleTestSheets} disabled={testingSheets}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600/20 border border-emerald-500/30 text-emerald-400 text-sm font-medium hover:bg-emerald-600/30 transition-all disabled:opacity-50">
-                    {testingSheets ? <><Loader2 className="w-4 h-4 animate-spin" />Sending...</> : <><Send className="w-4 h-4" />Send Test Row</>}
-                  </button>
-                  <SyncAllSheetsButton webhookUrl={settings.googleSheetsWebhook} />
-                  {sheetsResult === 'success' && <span className="flex items-center gap-1.5 text-emerald-400 text-sm"><CheckCircle2 className="w-4 h-4" />Sent! Check your Sheet</span>}
-                  {sheetsResult === 'fail' && <span className="flex items-center gap-1.5 text-red-400 text-sm"><XCircle className="w-4 h-4" />Failed — check URL & redeploy</span>}
-                </div>
-                <div className="flex items-start gap-3 px-3 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/15 text-xs text-zinc-400">
-                  <span className="text-blue-400">ℹ</span>
-                  <span>Status changes (approve, reject, schedule) automatically push an update row to your Sheet. No manual action needed.</span>
-                </div>
-                <a href={settings.googleSheetsWebhook} target="_blank" rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-violet-400 hover:underline">
-                  <ExternalLink className="w-3 h-3" />Open Apps Script URL
-                </a>
-              </div>
-            ) : (
-              <p className="text-xs text-zinc-600">Enter your Apps Script URL above to enable testing.</p>
-            )}
-          </Section>
-
-          <Collapsible title="📋 How to set up the Google Sheet (5 min)">
-            <div className="space-y-4 text-sm text-zinc-400">
-              {[
-                ['Create a Google Sheet', <>Go to <a href="https://sheets.google.com" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline">sheets.google.com</a> → New spreadsheet</>],
-                ['Open Apps Script', <>In your sheet: <span className="text-violet-400">Extensions</span> → <span className="text-violet-400">Apps Script</span> → delete all default code, paste the script below</>],
-                ['Deploy', <>Click <span className="text-violet-400">Deploy</span> → New deployment → Type: <strong className="text-white">Web app</strong> → Execute as: <strong className="text-white">Me</strong> → Access: <strong className="text-white">Anyone</strong> → Deploy → copy the URL</>],
-                ['Paste URL & test', 'Paste the URL above, save settings, then click Send Test Row to verify it works'],
-              ].map(([title, desc]) => (
-                <div key={String(title)} className="bg-zinc-900/60 rounded-xl p-4">
-                  <p className="text-white font-medium mb-1">{title}</p>
-                  <p>{desc}</p>
-                </div>
-              ))}
-              <CodeBlock code={APPS_SCRIPT_CODE} />
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">
-                <p className="text-emerald-400 font-medium">✅ Every real submission will auto-append with headers on first use.</p>
-              </div>
-            </div>
-          </Collapsible>
-        </div>
+        <SheetsTab settings={settings} setSettings={setSettings} />
       )}
-
-      {activeTab === 'team' && (
-        <div className="space-y-6 fade-in">
-          <TeamManagement />
-          {isOwner && (
-            <Section title="Custom Roles" desc="Create roles beyond Owner, Admin and Reviewer with granular permissions">
-              <CustomRoleBuilder />
-            </Section>
-          )}
-        </div>
-      )}
-
-      {activeTab === 'log' && (
-        <div className="fade-in">
-          <ActivityLog />
-        </div>
-      )}
-
-      {activeTab === 'backup' && (
-        <div className="space-y-5 fade-in">
-          <DataBackup />
-
-          {/* Supabase DB stats — owner only */}
-          {isOwner && (
-            <Section title="Database Overview" desc="Live stats from your Supabase project">
-              <SupabaseStats />
-            </Section>
-          )}
-        </div>
-      )}
-
-      {/* Save bar — hidden on tabs that have nothing to save */}
-      {!['team', 'log', 'backup'].includes(activeTab) && (
+      {/* Save */}
+      {activeTab !== 'team' && activeTab !== 'log' && activeTab !== 'backup' && (
         <>
           {saveError && (
-            <div className="bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl">{saveError}</div>
+            <div className="text-red-400 text-sm px-4 py-3 rounded-xl">{saveError}</div>
           )}
           <div className="flex items-center gap-4 pt-2 border-t border-white/5">
-            <button onClick={handleSave} disabled={saving}
-              className={`px-6 py-3 rounded-xl flex items-center gap-2 font-medium transition-all disabled:opacity-60 ${saved ? 'bg-emerald-600 text-white' : 'btn-primary'}`}>
+            <button
+              onClick={handleSave}
+              disabled={saving || saved}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium transition-all disabled:opacity-60 ${saved ? 'bg-emerald-600 text-white' : 'btn-primary'}`}>
               {saving ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</>
                : saved ? <><CheckCircle2 className="w-4 h-4" />Saved!</>
                : <><Save className="w-4 h-4" />Save Settings</>}

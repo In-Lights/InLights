@@ -1,11 +1,20 @@
 import { useState, useEffect } from 'react';
-import { Lock, LogIn, Eye, EyeOff, ShieldCheck, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, ArrowRight } from 'lucide-react';
 import { loginAdmin, fetchPublicBranding } from '../store';
 import { DEFAULT_ADMIN_SETTINGS } from '../types';
 
-interface Props {
-  onLogin: () => void;
-}
+interface Props { onLogin: () => void; }
+
+const FLOATING_TAGS = [
+  { text: 'Hip-Hop', x: '12%', y: '18%', delay: '0s', rotate: '-3deg' },
+  { text: 'New Drop', x: '62%', y: '12%', delay: '0.4s', rotate: '2deg' },
+  { text: 'Trap', x: '8%', y: '52%', delay: '0.8s', rotate: '-6deg' },
+  { text: 'Approved ✓', x: '58%', y: '58%', delay: '0.2s', rotate: '4deg' },
+  { text: 'R&B', x: '75%', y: '30%', delay: '1s', rotate: '-2deg' },
+  { text: 'In Review', x: '20%', y: '78%', delay: '0.6s', rotate: '3deg' },
+  { text: 'Afrobeats', x: '65%', y: '80%', delay: '1.2s', rotate: '-4deg' },
+  { text: 'Single', x: '40%', y: '40%', delay: '0.3s', rotate: '1deg' },
+];
 
 export default function AdminLogin({ onLogin }: Props) {
   const [username, setUsername] = useState('');
@@ -14,151 +23,326 @@ export default function AdminLogin({ onLogin }: Props) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [branding, setBranding] = useState({ companyName: DEFAULT_ADMIN_SETTINGS.companyName, companyLogo: DEFAULT_ADMIN_SETTINGS.companyLogo });
+  const [branding, setBranding] = useState({
+    companyName: DEFAULT_ADMIN_SETTINGS.companyName,
+    companyLogo: DEFAULT_ADMIN_SETTINGS.companyLogo,
+  });
 
   useEffect(() => {
-    setTimeout(() => setMounted(true), 100);
-    fetchPublicBranding().then(b => { if (b) setBranding(b); });
+    setTimeout(() => setMounted(true), 80);
+    fetchPublicBranding().then(b => { if (b) setBranding(b as typeof branding); });
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password.trim()) {
-      setError('Please enter both username and password');
+      setError('Enter both username and password');
       setTimeout(() => setError(''), 3000);
       return;
     }
-
     setLoading(true);
     try {
       const ok = await loginAdmin(username, password);
-      if (ok) {
-        // loginAdmin already sets the full session including role — don't overwrite it
-        onLogin();
-      } else {
-        setError('Invalid credentials. Please try again.');
+      if (ok) { onLogin(); }
+      else {
+        setError('Wrong credentials — try again');
         setTimeout(() => setError(''), 4000);
       }
     } catch {
-      setError('Connection error. Please try again.');
+      setError('Connection error — try again');
       setTimeout(() => setError(''), 4000);
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   return (
-    <div className="min-h-screen relative overflow-hidden flex items-center justify-center">
-      {/* Animated Background */}
-      <div className="absolute inset-0 bg-[#0a0a0f]">
-        <div className="absolute top-1/4 -left-32 w-96 h-96 bg-violet-600/15 rounded-full blur-[128px] animate-pulse" />
-        <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-fuchsia-600/10 rounded-full blur-[128px] animate-pulse" style={{ animationDelay: '1s' }} />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-violet-500/5 rounded-full blur-[200px]" />
-        <div className="absolute inset-0 opacity-[0.03]"
+    <div className="min-h-screen flex overflow-hidden bg-[#080808]">
+
+      {/* ── LEFT PANEL — Visual ── */}
+      <div className={`hidden lg:flex flex-col flex-1 relative overflow-hidden transition-all duration-1000 ${mounted ? 'opacity-100' : 'opacity-0'}`}>
+        {/* Deep noise background */}
+        <div className="absolute inset-0"
           style={{
-            backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
-            backgroundSize: '60px 60px'
+            background: 'radial-gradient(ellipse 80% 60% at 30% 40%, #1a0533 0%, #080808 70%)',
           }}
+        />
+        {/* Grain overlay */}
+        <div className="absolute inset-0 opacity-[0.15]"
+          style={{
+            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E")`,
+            backgroundRepeat: 'repeat',
+            backgroundSize: '128px',
+          }}
+        />
+        {/* Accent glow */}
+        <div className="absolute top-1/3 left-1/4 w-[500px] h-[500px] rounded-full"
+          style={{ background: 'radial-gradient(circle, rgba(139,92,246,0.15) 0%, transparent 70%)' }}
+        />
+
+        {/* Floating genre/status tags */}
+        {FLOATING_TAGS.map((tag, i) => (
+          <div
+            key={i}
+            className="absolute select-none"
+            style={{
+              left: tag.x, top: tag.y,
+              transform: `rotate(${tag.rotate})`,
+              animation: `floatTag 6s ease-in-out infinite`,
+              animationDelay: tag.delay,
+              opacity: mounted ? 1 : 0,
+              transition: `opacity 0.8s ease ${tag.delay}`,
+            }}
+          >
+            <div className="px-3 py-1.5 rounded-full text-xs font-semibold tracking-wide"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                color: 'rgba(255,255,255,0.35)',
+                backdropFilter: 'blur(8px)',
+              }}
+            >
+              {tag.text}
+            </div>
+          </div>
+        ))}
+
+        {/* Center content */}
+        <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-12">
+          <div
+            className="text-center"
+            style={{
+              opacity: mounted ? 1 : 0,
+              transform: mounted ? 'translateY(0)' : 'translateY(20px)',
+              transition: 'all 0.9s cubic-bezier(0.16, 1, 0.3, 1) 0.2s',
+            }}
+          >
+            {/* Logo */}
+            {branding.companyLogo ? (
+              <img src={branding.companyLogo} alt={branding.companyName}
+                className="h-20 w-20 object-contain rounded-2xl mx-auto mb-8"
+                style={{ boxShadow: '0 0 60px rgba(139,92,246,0.3)' }}
+              />
+            ) : (
+              <div className="w-20 h-20 rounded-2xl mx-auto mb-8 flex items-center justify-center text-3xl font-black"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(139,92,246,0.3), rgba(217,70,239,0.2))',
+                  border: '1px solid rgba(139,92,246,0.3)',
+                  boxShadow: '0 0 60px rgba(139,92,246,0.2)',
+                  color: 'rgba(255,255,255,0.9)',
+                }}
+              >
+                {branding.companyName?.charAt(0) || 'L'}
+              </div>
+            )}
+
+            <h2 className="text-5xl font-black tracking-tighter mb-3"
+              style={{
+                background: 'linear-gradient(135deg, #ffffff 30%, rgba(139,92,246,0.8) 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                lineHeight: 1.1,
+              }}
+            >
+              {branding.companyName}
+            </h2>
+            <p className="text-sm tracking-[0.3em] uppercase font-medium"
+              style={{ color: 'rgba(255,255,255,0.25)' }}>
+              Label Management
+            </p>
+          </div>
+
+          {/* Stat pills */}
+          <div
+            className="flex gap-3 mt-16 flex-wrap justify-center"
+            style={{
+              opacity: mounted ? 1 : 0,
+              transition: 'opacity 0.8s ease 0.6s',
+            }}
+          >
+            {['Submissions', 'Status Tracking', 'Team Workflow', 'AI Pitches'].map(stat => (
+              <div key={stat} className="px-4 py-2 rounded-full text-xs font-medium tracking-wide"
+                style={{
+                  background: 'rgba(255,255,255,0.03)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  color: 'rgba(255,255,255,0.3)',
+                }}
+              >
+                {stat}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Bottom fade */}
+        <div className="absolute bottom-0 inset-x-0 h-32"
+          style={{ background: 'linear-gradient(to top, #080808, transparent)' }}
         />
       </div>
 
-      <div className={`relative z-10 w-full max-w-[440px] mx-4 transition-all duration-700 ${mounted ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8'}`}>
-        <div className="h-[2px] bg-gradient-to-r from-transparent via-violet-500 to-transparent rounded-full mb-0" />
+      {/* ── RIGHT PANEL — Form ── */}
+      <div className="w-full lg:w-[480px] flex-shrink-0 flex flex-col justify-center relative"
+        style={{ background: '#0d0d0d', borderLeft: '1px solid rgba(255,255,255,0.04)' }}
+      >
+        {/* Subtle top line */}
+        <div className="absolute top-0 inset-x-0 h-px"
+          style={{ background: 'linear-gradient(90deg, transparent, rgba(139,92,246,0.5), transparent)' }}
+        />
 
-        <div className="bg-white/[0.03] backdrop-blur-2xl border border-white/[0.06] rounded-2xl shadow-2xl shadow-black/40">
-          <div className="pt-10 pb-6 px-8 text-center">
-            <div className="relative inline-block mb-5">
-              <div className="absolute inset-0 bg-violet-500/20 rounded-2xl blur-xl scale-150" />
-              <div className="relative bg-gradient-to-br from-white/10 to-white/[0.02] border border-white/10 rounded-2xl p-3">
-                {branding.companyLogo ? (
-                  <img src={branding.companyLogo} alt={branding.companyName} className="h-14 w-14 object-contain rounded-lg" />
+        <div
+          className="px-10 py-12"
+          style={{
+            opacity: mounted ? 1 : 0,
+            transform: mounted ? 'translateX(0)' : 'translateX(16px)',
+            transition: 'all 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s',
+          }}
+        >
+          {/* Mobile logo */}
+          <div className="lg:hidden flex items-center gap-3 mb-10">
+            {branding.companyLogo
+              ? <img src={branding.companyLogo} alt="" className="h-9 w-9 rounded-xl object-contain" />
+              : <div className="h-9 w-9 rounded-xl flex items-center justify-center text-sm font-black"
+                  style={{ background: 'rgba(139,92,246,0.2)', color: '#a78bfa' }}>
+                  {branding.companyName?.charAt(0)}
+                </div>
+            }
+            <span className="font-bold text-white">{branding.companyName}</span>
+          </div>
+
+          <div className="mb-10">
+            <h1 className="text-2xl font-black tracking-tight text-white mb-2">Welcome back</h1>
+            <p className="text-sm" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              Sign in to your label dashboard
+            </p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Username */}
+            <div>
+              <label className="block text-xs font-semibold mb-2 tracking-widest uppercase"
+                style={{ color: 'rgba(255,255,255,0.3)' }}>
+                Username
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => { setUsername(e.target.value); setError(''); }}
+                placeholder="your username"
+                autoFocus
+                disabled={loading}
+                className="w-full px-4 py-3.5 rounded-xl text-sm text-white placeholder-zinc-700 outline-none transition-all duration-200"
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                }}
+                onFocus={e => {
+                  e.target.style.border = '1px solid rgba(139,92,246,0.5)';
+                  e.target.style.background = 'rgba(139,92,246,0.05)';
+                }}
+                onBlur={e => {
+                  e.target.style.border = '1px solid rgba(255,255,255,0.07)';
+                  e.target.style.background = 'rgba(255,255,255,0.04)';
+                }}
+              />
+            </div>
+
+            {/* Password */}
+            <div>
+              <label className="block text-xs font-semibold mb-2 tracking-widest uppercase"
+                style={{ color: 'rgba(255,255,255,0.3)' }}>
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={e => { setPassword(e.target.value); setError(''); }}
+                  placeholder="••••••••"
+                  disabled={loading}
+                  className="w-full px-4 py-3.5 pr-12 rounded-xl text-sm text-white placeholder-zinc-700 outline-none transition-all duration-200"
+                  style={{
+                    background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.07)',
+                  }}
+                  onFocus={e => {
+                    e.target.style.border = '1px solid rgba(139,92,246,0.5)';
+                    e.target.style.background = 'rgba(139,92,246,0.05)';
+                  }}
+                  onBlur={e => {
+                    e.target.style.border = '1px solid rgba(255,255,255,0.07)';
+                    e.target.style.background = 'rgba(255,255,255,0.04)';
+                  }}
+                />
+                <button
+                  type="button"
+                  tabIndex={-1}
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 rounded-lg transition-colors"
+                  style={{ color: 'rgba(255,255,255,0.25)' }}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Error */}
+            {error && (
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm"
+                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.15)', color: '#f87171' }}
+              >
+                <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {/* Submit */}
+            <button
+              type="submit"
+              disabled={loading}
+              className="relative w-full py-3.5 rounded-xl text-sm font-bold tracking-wide overflow-hidden group transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed mt-2"
+              style={{
+                background: 'linear-gradient(135deg, #7c3aed, #6d28d9)',
+                color: 'white',
+                boxShadow: '0 0 30px rgba(124,58,237,0.25)',
+              }}
+            >
+              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
+              />
+              <span className="relative flex items-center justify-center gap-2.5">
+                {loading ? (
+                  <>
+                    <div className="w-4 h-4 border-2 rounded-full animate-spin"
+                      style={{ borderColor: 'rgba(255,255,255,0.2)', borderTopColor: 'white' }}
+                    />
+                    Signing in…
+                  </>
                 ) : (
-                  <ShieldCheck className="w-14 h-14 text-violet-400" />
+                  <>
+                    Enter Dashboard
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                  </>
                 )}
-              </div>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-transparent">
-              {branding.companyName}
-            </h1>
-            <p className="text-zinc-500 text-sm mt-2 font-medium">Label Management Portal</p>
+              </span>
+            </button>
+          </form>
+
+          {/* Back link */}
+          <div className="mt-8 pt-8" style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+            <a href="/"
+              className="text-xs transition-colors hover:text-white"
+              style={{ color: 'rgba(255,255,255,0.2)' }}
+            >
+              ← Back to submission form
+            </a>
           </div>
-
-          <div className="mx-8 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent" />
-
-          <div className="p-8 pt-6">
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider">Username</label>
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-violet-500/10 rounded-xl opacity-0 group-focus-within:opacity-100 blur-xl transition-opacity" />
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={e => { setUsername(e.target.value); setError(''); }}
-                    placeholder="Enter your username"
-                    className="relative w-full px-4 py-3.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white placeholder-zinc-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/[0.06] transition-all text-sm"
-                    autoFocus
-                    disabled={loading}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider">Password</label>
-                <div className="relative group">
-                  <div className="absolute inset-0 bg-violet-500/10 rounded-xl opacity-0 group-focus-within:opacity-100 blur-xl transition-opacity" />
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={e => { setPassword(e.target.value); setError(''); }}
-                    placeholder="Enter your password"
-                    className="relative w-full px-4 py-3.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white placeholder-zinc-600 focus:outline-none focus:border-violet-500/50 focus:bg-white/[0.06] transition-all text-sm pr-12"
-                    disabled={loading}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-zinc-600 hover:text-zinc-400 transition-colors rounded-lg hover:bg-white/5"
-                    tabIndex={-1}
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {error && (
-                <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/20 text-red-400 text-sm px-4 py-3 rounded-xl">
-                  <div className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0" />
-                  {error}
-                </div>
-              )}
-
-              <button type="submit" disabled={loading} className="relative w-full group overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-violet-600 to-fuchsia-600 rounded-xl blur-lg opacity-40 group-hover:opacity-60 transition-opacity" />
-                <div className="relative flex items-center justify-center gap-2.5 bg-gradient-to-r from-violet-600 to-violet-500 hover:from-violet-500 hover:to-fuchsia-500 text-white font-semibold py-3.5 px-6 rounded-xl transition-all duration-300 text-sm">
-                  {loading ? (
-                    <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Authenticating...</>
-                  ) : (
-                    <><LogIn className="w-4 h-4" />Sign In to Dashboard</>
-                  )}
-                </div>
-              </button>
-            </form>
-
-            <div className="mt-6 flex items-center justify-center gap-2 text-zinc-600">
-              <Lock className="w-3 h-3" />
-              <span className="text-xs">Secured admin access only</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 text-center">
-          <a href="/" className="inline-flex items-center gap-2 text-xs text-zinc-600 hover:text-violet-400 transition-colors group">
-            <ArrowLeft className="w-3 h-3 group-hover:-translate-x-0.5 transition-transform" />
-            Back to release submission
-          </a>
         </div>
       </div>
+
+      <style>{`
+        @keyframes floatTag {
+          0%, 100% { transform: translateY(0px) rotate(var(--r, 0deg)); }
+          50% { transform: translateY(-8px) rotate(var(--r, 0deg)); }
+        }
+      `}</style>
     </div>
   );
 }
