@@ -84,8 +84,8 @@ ${credits ? `Credits: ${credits}` : ''}
 ${lyrics ? `\nLYRICS EXCERPT:\n${lyrics.slice(0, 800)}` : ''}`;
 
     try {
-      // Gemini 1.5 Flash — free tier: 15 RPM, 1M TPM, no credit card needed
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${settings.geminiApiKey}`;
+      // Gemini 2.0 Flash — free tier, fast, high quality
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${settings.geminiApiKey}`;
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
