@@ -825,8 +825,17 @@ function ok(msg) {
           </Section>
 
           {/* Test */}
-          <Section title="Test it" desc="Fires a real email through your script to your notification address">
-            <div className="flex gap-3 items-center flex-wrap">
+          <Section title="Test it" desc="Send a real test email through your Gmail script">
+            <Field label="Notification Email" hint="Where new submission alerts go — also used for testing">
+              <input
+                type="email"
+                value={settings.notificationEmail ?? ''}
+                onChange={e => setSettings(p => ({ ...p, notificationEmail: e.target.value }))}
+                placeholder="you@gmail.com"
+                className="input-dark w-full px-4 py-2.5 rounded-xl"
+              />
+            </Field>
+            <div className="flex gap-3 items-center flex-wrap mt-3">
               <button
                 onClick={async () => {
                   setTestingEmail(true); setEmailTestResult(null);
@@ -841,13 +850,13 @@ function ok(msg) {
                 Send Test Email
               </button>
               {emailTestResult === 'success' && <span className="flex items-center gap-1.5 text-sm text-emerald-400"><CheckCircle2 className="w-4 h-4" /> Sent — check your inbox</span>}
-              {emailTestResult === 'fail' && <span className="flex items-center gap-1.5 text-sm text-red-400"><XCircle className="w-4 h-4" /> Failed — double-check your webhook URL</span>}
+              {emailTestResult === 'fail' && <span className="flex items-center gap-1.5 text-sm text-red-400"><XCircle className="w-4 h-4" /> Failed — check your webhook URL</span>}
             </div>
-            {!settings.notificationEmail && (
-              <p className="text-xs text-amber-400 mt-2">⚠️ Set a Notification Email in the Discord tab first — that's where the test goes.</p>
+            {!settings.gmailWebhookUrl && (
+              <p className="text-xs text-amber-400 mt-2">⚠️ Paste your Gmail webhook URL above first.</p>
             )}
             {settings.gmailWebhookUrl && settings.notificationEmail && (
-              <p className="text-xs text-zinc-600 mt-2">Test will send to: {settings.notificationEmail}</p>
+              <p className="text-xs text-zinc-600 mt-2">Will send to: {settings.notificationEmail}</p>
             )}
           </Section>
 
@@ -1346,7 +1355,6 @@ function ok(msg) {
       {activeTab === 'sheets' && isOwner && (
         <SheetsTab settings={settings} setSettings={setSettings} />
       )}
-      {/* Save */}
       {activeTab !== 'team' && activeTab !== 'log' && activeTab !== 'backup' && (
         <>
           {saveError && (
@@ -1365,6 +1373,11 @@ function ok(msg) {
           </div>
         </>
       )}
+
+      {/* Team / Activity / Backup — full-width components, no save button */}
+      {activeTab === 'team' && <TeamManagement />}
+      {activeTab === 'log' && <ActivityLog />}
+      {activeTab === 'backup' && <DataBackup />}
     </div>
   );
 }
