@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Users, Plus, Trash2, Shield, Eye, Crown, Loader2, KeyRound, Check, X, Edit2 } from 'lucide-react';
-import { AdminUser, AdminRole } from '../types';
-import { getAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser, getAdminSession } from '../store';
+import { Users, Plus, Trash2, Shield, Eye, Crown, Loader2, KeyRound, Check, X, Edit2, ShieldCheck } from 'lucide-react';
+import { AdminUser, AdminRole, CustomRole } from '../types';
+import { getAdminUsers, createAdminUser, updateAdminUser, deleteAdminUser, getAdminSession, getCustomRoles } from '../store';
+import CustomRoleBuilder from './CustomRoleBuilder';
 
 const ROLE_META: Record<AdminRole, { label: string; icon: React.FC<{ className?: string }>; color: string; bg: string; desc: string }> = {
   owner:    { label: 'Owner',    icon: Crown,   color: 'text-amber-400',   bg: 'bg-amber-500/10',   desc: 'Full access, manage team & settings' },
@@ -26,6 +27,7 @@ export default function TeamManagement() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [customRoles, setCustomRolesList] = useState<CustomRole[]>([]);
 
   // Add user form
   const [showAdd, setShowAdd] = useState(false);
@@ -54,8 +56,9 @@ export default function TeamManagement() {
   const load = async () => {
     setLoading(true);
     try {
-      const u = await getAdminUsers();
+      const [u, cr] = await Promise.all([getAdminUsers(), getCustomRoles()]);
       setUsers(u);
+      setCustomRolesList(cr);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Failed to load team');
     } finally {
@@ -181,7 +184,7 @@ export default function TeamManagement() {
           </div>
           <div>
             <label className="text-[11px] text-zinc-500 mb-2 block">Role</label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {(['reviewer', 'admin', 'owner'] as AdminRole[]).map(r => {
                 const meta = ROLE_META[r];
                 const Icon = meta.icon;
@@ -189,7 +192,7 @@ export default function TeamManagement() {
                   <button
                     key={r}
                     onClick={() => setNewRole(r)}
-                    className={`flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                    className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
                       newRole === r
                         ? `${meta.bg} ${meta.color} border-current`
                         : 'border-white/8 text-zinc-500 hover:text-white hover:bg-white/5'
@@ -199,6 +202,19 @@ export default function TeamManagement() {
                   </button>
                 );
               })}
+              {customRoles.map(cr => (
+                <button
+                  key={cr.id}
+                  onClick={() => setNewRole(cr.name as AdminRole)}
+                  className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all ${
+                    newRole === cr.name
+                      ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/40'
+                      : 'border-white/8 text-zinc-500 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" /> {cr.name}
+                </button>
+              ))}
             </div>
           </div>
           {addError && <p className="text-xs text-red-400">{addError}</p>}
@@ -327,6 +343,20 @@ export default function TeamManagement() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* ── Custom Roles ── */}
+      {canManage && (
+        <div className="mt-6 pt-6 border-t border-white/5">
+          <div className="flex items-center gap-2 mb-4">
+            <ShieldCheck className="w-4 h-4 accent-text" />
+            <div>
+              <h3 className="font-bold text-sm">Custom Roles</h3>
+              <p className="text-xs text-zinc-500">Create roles with specific permission sets and assign them to team members</p>
+            </div>
+          </div>
+          <CustomRoleBuilder />
         </div>
       )}
     </div>

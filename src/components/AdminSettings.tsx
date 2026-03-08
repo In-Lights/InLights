@@ -753,6 +753,18 @@ function ok(msg) {
             </div>
           </div>
 
+          {/* Required SQL migration */}
+          <div className="rounded-2xl border border-amber-500/25 bg-amber-500/8 p-4 flex gap-3">
+            <span className="text-amber-400 text-sm flex-shrink-0 mt-0.5">⚠️</span>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold text-amber-300 mb-2">Run this in Supabase SQL Editor first — otherwise settings won't save</p>
+              <code className="block bg-black/40 text-amber-200 text-[11px] font-mono px-3 py-2.5 rounded-lg leading-relaxed select-all whitespace-pre">{`ALTER TABLE settings ADD COLUMN IF NOT EXISTS gmail_webhook_url TEXT;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS email_from_name TEXT;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS email_notify_on_submission BOOLEAN DEFAULT false;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS email_notify_artist_on_status BOOLEAN DEFAULT false;`}</code>
+            </div>
+          </div>
+
           {/* Step 1 */}
           <Section title="Step 1 — Create the Apps Script" desc="script.google.com → New project → paste → deploy">
             <div className="bg-zinc-950 border border-white/10 rounded-xl overflow-hidden">
