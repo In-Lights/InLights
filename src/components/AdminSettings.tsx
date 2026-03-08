@@ -1188,13 +1188,23 @@ function ok(msg) {
 
           {/* API Key */}
           <Section title="Google Gemini API Key" desc="Free tier — 15 req/min, no credit card needed">
-            <Field label="API Key" hint="Starts with stored in DB, owner-only">
+            {/* Migration reminder */}
+            <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 mb-2">
+              <span className="text-amber-400 text-xs mt-0.5">⚠️</span>
+              <p className="text-xs text-amber-300 leading-relaxed">
+                Run this in your <strong>Supabase SQL Editor</strong> before saving, or the key won't persist:
+                <code className="block mt-1.5 bg-black/40 px-3 py-1.5 rounded-lg font-mono text-amber-200 select-all">
+                  ALTER TABLE settings ADD COLUMN IF NOT EXISTS gemini_api_key TEXT;
+                </code>
+              </p>
+            </div>
+            <Field label="API Key" hint="From aistudio.google.com/apikey — starts with AIza...">
               <div className="relative">
                 <input
                   type={showApiKey ? 'text' : 'password'}
                   value={settings.geminiApiKey ?? ''}
                   onChange={e => setSettings(p => ({ ...p, geminiApiKey: e.target.value }))}
-                  placeholder="AIza..."
+                  placeholder="AIzaSy..."
                   className="input-dark w-full px-4 py-2.5 rounded-xl pr-10 font-mono text-sm"
                 />
                 <button
