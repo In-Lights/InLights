@@ -28,36 +28,92 @@ const ACCENT_COLORS = [
 
 const APPS_SCRIPT_CODE = `function doPost(e) {
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('Releases') || ss.getActiveSheet();
     var data = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Releases') || ss.insertSheet('Releases');
 
-    if (data.action === 'newRelease') {
-      if (sheet.getLastRow() === 0) {
-        sheet.appendRow([
-          'ID','Submitted At','Status','Main Artist','Collaborations',
-          'Features','Type','Title','Release Date','Genre','Explicit',
-          'Track Count','Track Names','Cover Art','Promo Link','Drive Folder'
-        ]);
-        sheet.getRange(1,1,1,16).setFontWeight('bold');
-      }
-      sheet.appendRow([
-        data.id, data.submittedAt, data.status, data.mainArtist,
-        data.collaborations, data.features, data.releaseType,
-        data.releaseTitle, data.releaseDate, data.genre, data.explicit,
-        data.trackCount, data.tracks, data.coverArtLink,
-        data.promoLink, data.driveFolderLink
-      ]);
+    // Always ensure header row exists with correct columns
+    var headers = ['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At'];
+    if (sheet.getLastRow() === 0 || sheet.getRange(1,1).getValue() !== 'ID') {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length)
+        .setFontWeight('bold')
+        .setBackground('#1a1a2e')
+        .setFontColor('#ffffff');
+      sheet.setFrozenRows(1);
     }
+
+    if (data.action === 'upsertRelease') {
+      var id = String(data.id).trim();
+      var lastRow = sheet.getLastRow();
+      var rowIndex = -1;
+
+      // Search for existing row by ID
+      if (lastRow > 1) {
+        var idCol = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < idCol.length; i++) {
+          if (String(idCol[i][0]).trim() === id) {
+            rowIndex = i;
+            break;
+          }
+        }
+      }
+
+      var rowData = [
+        id,
+        data.title || '',
+        data.artist || '',
+        data.upc || '',
+        data.isrc || '',
+        data.releaseType || '',
+        data.genre || '',
+        data.releaseDate || '',
+        data.status || '',
+        data.explicit || '',
+        data.tracks || '',
+        data.trackCount || 0,
+        data.collaborations || '',
+        data.features || '',
+        data.coverArtLink || '',
+        data.driveFolderLink || '',
+        data.promoLink || '',
+        data.submittedAt || '',
+        data.updatedAt || ''
+      ];
+
+      var statusColors = {
+        'approved': '#d4edda',
+        'rejected': '#f8d7da',
+        'scheduled': '#cce5ff',
+        'released': '#d1ecf1',
+        'pending': '#fff3cd',
+        'under_review': '#e2d9f3'
+      };
+      var bgColor = statusColors[data.status] || '#ffffff';
+
+      if (rowIndex === -1) {
+        // New row
+        sheet.appendRow(rowData);
+        sheet.getRange(sheet.getLastRow(), 9).setBackground(bgColor);
+      } else {
+        // Update existing row
+        var targetRow = rowIndex + 2;
+        sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
+        sheet.getRange(targetRow, 9).setBackground(bgColor);
+      }
+    }
+
     return ContentService
-      .createTextOutput(JSON.stringify({ result: 'ok' }))
+      .createTextOutput(JSON.stringify({ ok: true }))
       .setMimeType(ContentService.MimeType.JSON);
+
   } catch(err) {
     return ContentService
-      .createTextOutput(JSON.stringify({ error: err.toString() }))
+      .createTextOutput(JSON.stringify({ error: err.message }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 }
+
 function doGet() {
   return ContentService
     .createTextOutput(JSON.stringify({ status: 'active' }))
@@ -186,29 +242,93 @@ const SHEETS_SCRIPT = `function doPost(e) {
     var data = JSON.parse(e.postData.contents);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Releases') || ss.insertSheet('Releases');
-    if (sheet.getLastRow() === 0) {
-      sheet.appendRow(['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At']);
-      sheet.getRange(1,1,1,19).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+
+    // Always ensure header row exists with correct columns
+    var headers = ['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At'];
+    if (sheet.getLastRow() === 0 || sheet.getRange(1,1).getValue() !== 'ID') {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length)
+        .setFontWeight('bold')
+        .setBackground('#1a1a2e')
+        .setFontColor('#ffffff');
       sheet.setFrozenRows(1);
     }
+
     if (data.action === 'upsertRelease') {
-      var ids = sheet.getLastRow() > 1 ? sheet.getRange(2,1,sheet.getLastRow()-1,1).getValues().flat() : [];
-      var rowIndex = ids.indexOf(data.id);
-      var rowData = [data.id,data.title,data.artist,data.upc||'',data.isrc||'',data.releaseType,data.genre,data.releaseDate,data.status,data.explicit,data.tracks,data.trackCount,data.collaborations,data.features,data.coverArtLink,data.driveFolderLink,data.promoLink,data.submittedAt,data.updatedAt];
-      var colors = {approved:'#d4edda',rejected:'#f8d7da',scheduled:'#cce5ff',released:'#d1ecf1',pending:'#fff3cd',under_review:'#e2d9f3'};
+      var id = String(data.id).trim();
+      var lastRow = sheet.getLastRow();
+      var rowIndex = -1;
+
+      // Search for existing row by ID
+      if (lastRow > 1) {
+        var idCol = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < idCol.length; i++) {
+          if (String(idCol[i][0]).trim() === id) {
+            rowIndex = i;
+            break;
+          }
+        }
+      }
+
+      var rowData = [
+        id,
+        data.title || '',
+        data.artist || '',
+        data.upc || '',
+        data.isrc || '',
+        data.releaseType || '',
+        data.genre || '',
+        data.releaseDate || '',
+        data.status || '',
+        data.explicit || '',
+        data.tracks || '',
+        data.trackCount || 0,
+        data.collaborations || '',
+        data.features || '',
+        data.coverArtLink || '',
+        data.driveFolderLink || '',
+        data.promoLink || '',
+        data.submittedAt || '',
+        data.updatedAt || ''
+      ];
+
+      var statusColors = {
+        'approved': '#d4edda',
+        'rejected': '#f8d7da',
+        'scheduled': '#cce5ff',
+        'released': '#d1ecf1',
+        'pending': '#fff3cd',
+        'under_review': '#e2d9f3'
+      };
+      var bgColor = statusColors[data.status] || '#ffffff';
+
       if (rowIndex === -1) {
+        // New row
         sheet.appendRow(rowData);
-        sheet.getRange(sheet.getLastRow(),9).setBackground(colors[data.status]||'#ffffff');
+        sheet.getRange(sheet.getLastRow(), 9).setBackground(bgColor);
       } else {
-        var r = rowIndex + 2;
-        sheet.getRange(r,1,1,rowData.length).setValues([rowData]);
-        sheet.getRange(r,9).setBackground(colors[data.status]||'#ffffff');
+        // Update existing row
+        var targetRow = rowIndex + 2;
+        sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
+        sheet.getRange(targetRow, 9).setBackground(bgColor);
       }
     }
-    return ContentService.createTextOutput(JSON.stringify({ok:true})).setMimeType(ContentService.MimeType.JSON);
+
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+
   } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({error:err.message})).setMimeType(ContentService.MimeType.JSON);
+    return ContentService
+      .createTextOutput(JSON.stringify({ error: err.message }))
+      .setMimeType(ContentService.MimeType.JSON);
   }
+}
+
+function doGet() {
+  return ContentService
+    .createTextOutput(JSON.stringify({ status: 'active' }))
+    .setMimeType(ContentService.MimeType.JSON);
 }`;
 
 const SHEET_COLUMNS = ['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At'];
