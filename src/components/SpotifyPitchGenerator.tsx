@@ -7,7 +7,7 @@ interface Props {
   release: ReleaseSubmission;
 }
 
-// Models to try in order — fallback if one is unavailable
+// Models to try in order
 const MODELS = [
   'gemini-flash-latest',
   'gemini-2.0-flash',
@@ -22,7 +22,7 @@ async function fetchLyricsFromDocs(docsUrl: string): Promise<string | null> {
   try {
     const res = await fetch(exportUrl);
     if (!res.ok) return null;
-    return (await res.text()).trim().slice(0, 2000);
+    return (await res.text()).trim().slice(0, 3000);
   } catch { return null; }
 }
 
@@ -34,7 +34,7 @@ async function callGemini(model: string, prompt: string, apiKey: string): Promis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 512, temperature: 0.85 },
+        generationConfig: { maxOutputTokens: 2048, temperature: 0.85 },
       }),
     });
     const data = await res.json();
@@ -42,7 +42,6 @@ async function callGemini(model: string, prompt: string, apiKey: string): Promis
     if (!res.ok) {
       const msg: string = data?.error?.message || `HTTP ${res.status}`;
       const isQuota = msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED') || res.status === 429;
-      // Parse retry delay from message e.g. "Please retry in 55.39s"
       const retryMatch = msg.match(/retry in ([\d.]+)s/i);
       const retryAfter = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : undefined;
       return { error: msg, quota: isQuota, retryAfter };
@@ -66,7 +65,6 @@ export default function SpotifyPitchGenerator({ release }: Props) {
   const [lyricsStatus, setLyricsStatus] = useState('');
   const [usedModel, setUsedModel] = useState('');
 
-  // Countdown timer for quota retry
   useEffect(() => {
     if (retryIn <= 0) return;
     const t = setTimeout(() => setRetryIn(r => r - 1), 1000);
@@ -89,7 +87,7 @@ export default function SpotifyPitchGenerator({ release }: Props) {
       return;
     }
 
-    // Fetch lyrics
+    // Fetch lyrics from all tracks
     let lyrics = '';
     for (const track of release.tracks) {
       if (track.lyricsGoogleDocsLink) {
@@ -102,36 +100,74 @@ export default function SpotifyPitchGenerator({ release }: Props) {
 
     const features = release.features.map(f => f.name).filter(Boolean).join(', ');
     const collabs = release.collaborations.map(c => c.name).filter(Boolean).join(', ');
-    const trackList = release.tracks.map((t, i) => `${i + 1}. ${t.title}${t.explicit ? ' [E]' : ''}`).join('\n');
-    const credits = release.tracks[0]
-      ? [
-          release.tracks[0].producedBy && `Produced by ${release.tracks[0].producedBy}`,
-          release.tracks[0].mixedBy && `Mixed by ${release.tracks[0].mixedBy}`,
-          release.tracks[0].masteredBy && `Mastered by ${release.tracks[0].masteredBy}`,
-        ].filter(Boolean).join(' · ')
-      : '';
+    const trackList = release.tracks.map((t, i) =>
+      `Track ${i + 1}: "${t.title}"${t.explicit ? ' [Explicit]' : ''}${t.producedBy ? ` — Prod. ${t.producedBy}` : ''}`
+    ).join('\n');
 
-    const prompt = `You are a music PR expert writing a Spotify playlist pitch for a label submission.
+    // Pick the best candidate single (first track or most prominent)
+    const keySong = release.tracks[0]?.title || release.releaseTitle;
+    const keySongIndex = 1;
 
-Write a compelling, concise Spotify editorial pitch (max 200 words) for this release.
-Hook the curator immediately, describe the sound and mood vividly, mention key influences if apparent,
-and end with a clear ask to be added to a relevant playlist.
-Professional but energetic music industry language. No emojis. No headers. Just the pitch text.
+    const prompt = `You are a senior music PR strategist writing a full press release and Spotify pitch document for a label.
 
-Artist: ${release.mainArtist}${collabs ? ` feat. ${collabs}` : ''}${features ? ` (ft. ${features})` : ''}
-Title: ${release.releaseTitle}
+Generate a COMPLETE, detailed press release using EXACTLY this structure and format:
+
+---
+
+[RELEASE TITLE IN CAPS]
+[ARTIST NAME IN CAPS]
+PRESS RELEASE
+
+[ARTIST]: "[KEY SONG]" Pitch Summary for [Genre] Genre
+
+1. Short Description of ${release.releaseType === 'single' ? 'Single' : release.releaseType === 'ep' ? 'EP' : 'Album'}: [RELEASE TITLE IN CAPS AND BOLD]
+
+Write 3-4 sentences describing: the artistic vision and narrative of the release, the emotional themes (be specific), the production soundscape (trap/R&B/pop etc), and the cultural or personal statement the artist is making. Be vivid and specific.
+
+2. Choice of Key Song (Breakout Single) [KEY SONG NAME IN CAPS]
+
+(Track ${keySongIndex} / genre is [genre])
+
+3. Short Description of Key Song
+
+Write 4-5 sentences covering: the BPM and production style, the core lyrical theme in one sentence, WHY this track is perfect for playlists (be specific about mood/energy), quote ONE key lyric if lyrics are provided (with translation if not in English), and what makes this track redefine the genre.
+
+---
+
+Key Campaign Point to Include in the Full Email:
+
+• Content Asset: Write a detailed recommendation for the content/visual strategy — music video concept, which other track to pair it with for contrast, release timing strategy, and how this builds the artist narrative.
+
+---
+
+Write a 2-sentence closing that ties the pitch together, mentions the genre positioning, and makes a direct ask to playlist curators.
+
+---
+
+IMPORTANT RULES:
+- Write the FULL document — do not cut it short under any circumstances
+- Be specific and detailed — no generic filler phrases
+- Use bold formatting with ** for key phrases
+- If lyrics are provided, quote the most powerful line
+- The document should be 400-600 words minimum
+
+RELEASE DATA:
+Artist: ${release.mainArtist}${collabs ? ` with ${collabs}` : ''}${features ? ` feat. ${features}` : ''}
+Release Title: ${release.releaseTitle}
 Type: ${release.releaseType.toUpperCase()}
-Genre: ${release.genre}
+Genre: ${release.genre || 'not specified'}
 Release Date: ${release.releaseDate || 'TBD'}
-Tracks:\n${trackList}
-${credits ? `Credits: ${credits}` : ''}
-${lyrics ? `\nLyrics excerpt:\n${lyrics.slice(0, 600)}` : ''}`;
+Explicit: ${release.explicitContent ? 'Yes' : 'No'}
 
-    // Try each model in order, fall back on quota errors
+TRACKLIST:
+${trackList}
+
+${lyrics ? `LYRICS (use to identify key themes and quote the best line):\n${lyrics.slice(0, 2000)}` : 'No lyrics provided — infer themes from title and genre.'}`;
+
+    // Try each model in order
     let lastError = '';
     let lastRetry: number | undefined;
     for (const model of MODELS) {
-      setLyricsStatus(prev => prev || `Trying ${model}…`);
       const result = await callGemini(model, prompt, settings.geminiApiKey);
 
       if (result.text) {
@@ -145,13 +181,9 @@ ${lyrics ? `\nLyrics excerpt:\n${lyrics.slice(0, 600)}` : ''}`;
       lastError = result.error || 'Unknown error';
       lastRetry = result.retryAfter;
 
-      // Only keep trying on quota errors — auth/not-found errors stop immediately
-      if (!result.quota && !lastError.includes('not found') && !lastError.includes('not supported')) {
-        break;
-      }
+      if (!result.quota && !lastError.includes('not found') && !lastError.includes('not supported')) break;
     }
 
-    // All models failed
     setLoading(false);
     setLyricsStatus('');
 
@@ -159,9 +191,9 @@ ${lyrics ? `\nLyrics excerpt:\n${lyrics.slice(0, 600)}` : ''}`;
       setErrorType('quota');
       setError('quota');
       if (lastRetry) setRetryIn(lastRetry);
-    } else if (lastError.includes('API key') || lastError.includes('authentication') || lastError.includes('403')) {
+    } else if (lastError.toLowerCase().includes('api key') || lastError.includes('403')) {
       setErrorType('auth');
-      setError('Invalid API key. Check Settings → AI and make sure you ran the Supabase migration.');
+      setError('Invalid API key. Check Settings → AI.');
     } else {
       setErrorType('generic');
       setError(lastError);
@@ -180,7 +212,7 @@ ${lyrics ? `\nLyrics excerpt:\n${lyrics.slice(0, 600)}` : ''}`;
         onClick={() => { setOpen(true); generate(); }}
         className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border border-violet-500/30 bg-violet-500/5 text-violet-400 hover:bg-violet-500/10 transition-all text-sm font-medium"
       >
-        <Sparkles className="w-4 h-4" /> Generate Spotify Pitch
+        <Sparkles className="w-4 h-4" /> Generate Press Release & Pitch
       </button>
     );
   }
@@ -189,14 +221,14 @@ ${lyrics ? `\nLyrics excerpt:\n${lyrics.slice(0, 600)}` : ''}`;
     <div className="glass-card rounded-2xl p-5 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Music2 className="w-4 h-4 text-green-400" />
-          <span className="text-sm font-bold">Spotify Playlist Pitch</span>
+          <span className="text-sm font-bold">Press Release & Spotify Pitch</span>
           {usedModel && (
             <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium">{usedModel}</span>
           )}
         </div>
-        <button onClick={() => { setOpen(false); setPitch(''); setError(''); setRetryIn(0); }} className="text-xs text-zinc-600 hover:text-zinc-400">✕ Close</button>
+        <button onClick={() => { setOpen(false); setPitch(''); setError(''); setRetryIn(0); }} className="text-xs text-zinc-600 hover:text-zinc-400 flex-shrink-0">✕ Close</button>
       </div>
 
       {lyricsStatus && (
@@ -204,47 +236,32 @@ ${lyrics ? `\nLyrics excerpt:\n${lyrics.slice(0, 600)}` : ''}`;
       )}
 
       {loading && (
-        <div className="flex items-center gap-3 py-6 justify-center">
-          <Loader2 className="w-5 h-5 text-violet-400 animate-spin" />
-          <span className="text-sm text-zinc-400">Writing pitch…</span>
+        <div className="flex flex-col items-center gap-3 py-8 justify-center">
+          <Loader2 className="w-6 h-6 text-violet-400 animate-spin" />
+          <span className="text-sm text-zinc-400">Writing full press release…</span>
+          <span className="text-xs text-zinc-600">This takes 10–20 seconds for a complete document</span>
         </div>
       )}
 
-      {/* Quota error — clean UI with countdown */}
+      {/* Quota error */}
       {error === 'quota' && !loading && (
         <div className="rounded-xl bg-amber-500/10 border border-amber-500/20 p-4 space-y-3">
           <div className="flex items-start gap-2">
             <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-semibold text-amber-300">Free tier quota reached</p>
-              <p className="text-xs text-amber-400/80 mt-1 leading-relaxed">
-                All free Gemini models are quota-limited for your account right now.
-                {retryIn > 0 ? ` Try again in ${retryIn}s.` : ' Try again in a minute.'}
-              </p>
+              <p className="text-xs text-amber-400/80 mt-1">{retryIn > 0 ? `Try again in ${retryIn}s.` : 'Try again in a moment.'}</p>
             </div>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={generate}
-              disabled={retryIn > 0}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-all"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              {retryIn > 0 ? `Retry in ${retryIn}s` : 'Retry now'}
-            </button>
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer"
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-zinc-400 hover:text-white text-sm transition-all">
-              <ExternalLink className="w-3.5 h-3.5" /> Check quota
-            </a>
-          </div>
-          <p className="text-[10px] text-amber-500/60 leading-relaxed">
-            Tip: Free tier limits reset per minute. If it keeps failing, your region may not support Gemini free tier —
-            add a payment method at <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" className="underline">aistudio.google.com</a> (pay-as-you-go is very cheap).
-          </p>
+          <button onClick={generate} disabled={retryIn > 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium transition-all">
+            <RefreshCw className="w-3.5 h-3.5" />
+            {retryIn > 0 ? `Retry in ${retryIn}s` : 'Retry now'}
+          </button>
         </div>
       )}
 
-      {/* Auth / generic error */}
+      {/* Generic/auth error */}
       {error && error !== 'quota' && !loading && (
         <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 rounded-xl px-4 py-3">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
@@ -252,15 +269,15 @@ ${lyrics ? `\nLyrics excerpt:\n${lyrics.slice(0, 600)}` : ''}`;
         </div>
       )}
 
-      {/* Pitch output */}
+      {/* Output */}
       {pitch && !loading && (
         <>
-          <div className="bg-zinc-900/60 rounded-xl p-4 border border-white/5">
+          <div className="bg-zinc-900/60 rounded-xl p-4 border border-white/5 max-h-[500px] overflow-y-auto">
             <p className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">{pitch}</p>
           </div>
           <div className="flex gap-2 flex-wrap">
             <button onClick={handleCopy} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 text-sm font-medium transition-all">
-              {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Pitch</>}
+              {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Full Release</>}
             </button>
             <button onClick={generate} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-zinc-400 hover:text-white text-sm transition-all">
               <Sparkles className="w-4 h-4" /> Regenerate
@@ -270,7 +287,7 @@ ${lyrics ? `\nLyrics excerpt:\n${lyrics.slice(0, 600)}` : ''}`;
               <ExternalLink className="w-4 h-4" /> Spotify for Artists
             </a>
           </div>
-          <p className="text-[10px] text-zinc-700">Paste into Spotify for Artists → Music → select release → Pitch to Editors</p>
+          <p className="text-[10px] text-zinc-700">Paste pitch section into Spotify for Artists → Music → select release → Pitch to Editors</p>
         </>
       )}
     </div>
