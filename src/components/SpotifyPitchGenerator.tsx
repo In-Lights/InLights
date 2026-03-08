@@ -34,7 +34,7 @@ async function callGemini(model: string, prompt: string, apiKey: string): Promis
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 2048, temperature: 0.85 },
+        generationConfig: { maxOutputTokens: 4096, temperature: 0.85 },
       }),
     });
     const data = await res.json();
@@ -206,6 +206,58 @@ ${lyrics ? `LYRICS (use to identify key themes and quote the best line):\n${lyri
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // Convert markdown-style pitch to clean HTML for Word paste
+  const copyAsWord = () => {
+    const html = pitch
+      .split('\n')
+      .map(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return '<p style="margin:0;height:12pt"></p>';
+        // ### heading
+        if (trimmed.startsWith('### ')) {
+          const content = trimmed.slice(4).replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+          return `<h3 style="font-family:Arial,sans-serif;font-size:13pt;font-weight:bold;margin:14pt 0 4pt 0">${content}</h3>`;
+        }
+        // ## heading
+        if (trimmed.startsWith('## ')) {
+          const content = trimmed.slice(3).replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+          return `<h2 style="font-family:Arial,sans-serif;font-size:15pt;font-weight:bold;text-align:center;margin:10pt 0">${content}</h2>`;
+        }
+        // --- divider
+        if (trimmed === '---') return '<hr style="border:none;border-top:1px solid #ccc;margin:12pt 0"/>';
+        // bullet point
+        if (trimmed.startsWith('• ') || trimmed.startsWith('- ')) {
+          const content = trimmed.slice(2).replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+          return `<p style="font-family:Arial,sans-serif;font-size:11pt;margin:4pt 0 4pt 20pt">• ${content}</p>`;
+        }
+        // first 3 lines (title block) — center + bold
+        const lineIndex = pitch.split('\n').indexOf(line);
+        if (lineIndex < 3) {
+          return `<p style="font-family:Arial,sans-serif;font-size:16pt;font-weight:bold;text-align:center;text-decoration:underline;margin:4pt 0">${trimmed}</p>`;
+        }
+        // regular paragraph
+        const content = trimmed.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+        return `<p style="font-family:Arial,sans-serif;font-size:11pt;line-height:1.6;margin:6pt 0">${content}</p>`;
+      })
+      .join('');
+
+    const blob = new Blob([`
+      <html xmlns:o="urn:schemas-microsoft-com:office:office"
+            xmlns:w="urn:schemas-microsoft-com:office:word"
+            xmlns="http://www.w3.org/TR/REC-html40">
+      <head><meta charset="utf-8"><title>Press Release</title></head>
+      <body style="font-family:Arial,sans-serif;padding:40pt 50pt">${html}</body>
+      </html>
+    `], { type: 'application/msword' });
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${release.releaseTitle || 'press-release'}-pitch.doc`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (!open) {
     return (
       <button
@@ -277,7 +329,10 @@ ${lyrics ? `LYRICS (use to identify key themes and quote the best line):\n${lyri
           </div>
           <div className="flex gap-2 flex-wrap">
             <button onClick={handleCopy} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 text-sm font-medium transition-all">
-              {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Full Release</>}
+              {copied ? <><Check className="w-4 h-4" /> Copied!</> : <><Copy className="w-4 h-4" /> Copy Text</>}
+            </button>
+            <button onClick={copyAsWord} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600/20 text-blue-400 hover:bg-blue-600/30 text-sm font-medium transition-all">
+              <ExternalLink className="w-4 h-4" /> Download as Word
             </button>
             <button onClick={generate} className="flex items-center gap-2 px-4 py-2 rounded-xl border border-white/10 text-zinc-400 hover:text-white text-sm transition-all">
               <Sparkles className="w-4 h-4" /> Regenerate
