@@ -730,36 +730,21 @@ export function logoutAdmin(): void {
 // ============================================================
 // Google Sheets — full sync mirror
 // ============================================================
-// ── Google Sheets sync payload builder ───────────────────────────────────────
+// ── Google Sheets sync — 6 columns only: ID, Title, Artist, UPC, ISRC, Release Date
 function buildSheetsPayload(action: string, release: ReleaseSubmission) {
-  // Collect all ISRCs from tracks
   const isrcList = release.tracks
     .map(t => t.isrc?.trim())
     .filter(Boolean)
     .join(', ');
 
   return {
-    action,                                            // 'upsertRelease'
+    action,
     id: release.id,
     title: release.releaseTitle,
     artist: release.mainArtist,
     upc: release.upc ?? '',
     isrc: isrcList,
-    // Extended fields
-    releaseType: release.releaseType,
-    genre: release.genre ?? '',
     releaseDate: release.releaseDate ?? '',
-    status: release.status,
-    explicit: release.explicitContent ? 'Yes' : 'No',
-    tracks: release.tracks.map(t => t.title).join(', '),
-    trackCount: release.tracks.length,
-    collaborations: release.collaborations?.map(c => c.name).join(', ') ?? '',
-    features: release.features?.map(f => f.name).join(', ') ?? '',
-    coverArtLink: release.coverArtDriveLink ?? release.coverArtImageUrl ?? '',
-    driveFolderLink: release.driveFolderLink ?? '',
-    promoLink: release.promoDriveLink ?? '',
-    submittedAt: release.createdAt,
-    updatedAt: new Date().toISOString(),
   };
 }
 

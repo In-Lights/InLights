@@ -32,9 +32,11 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Releases') || ss.insertSheet('Releases');
 
-    // Always ensure header row exists with correct columns
-    var headers = ['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At'];
-    if (sheet.getLastRow() === 0 || sheet.getRange(1,1).getValue() !== 'ID') {
+    // Ensure correct header row
+    var headers = ['ID', 'Title', 'Artist', 'UPC', 'ISRC', 'Release Date'];
+    var firstCell = sheet.getLastRow() === 0 ? '' : String(sheet.getRange(1,1).getValue());
+    if (firstCell !== 'ID') {
+      sheet.clearContents();
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       sheet.getRange(1, 1, 1, headers.length)
         .setFontWeight('bold')
@@ -44,16 +46,17 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
     }
 
     if (data.action === 'upsertRelease') {
-      var id = String(data.id).trim();
-      var lastRow = sheet.getLastRow();
-      var rowIndex = -1;
+      var id = String(data.id || '').trim();
+      if (!id) throw new Error('Missing release ID');
 
-      // Search for existing row by ID
-      if (lastRow > 1) {
-        var idCol = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        for (var i = 0; i < idCol.length; i++) {
-          if (String(idCol[i][0]).trim() === id) {
-            rowIndex = i;
+      // Find existing row by scanning ID column
+      var lastRow = sheet.getLastRow();
+      var foundRow = -1;
+      if (lastRow >= 2) {
+        var idValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < idValues.length; i++) {
+          if (String(idValues[i][0]).trim() === id) {
+            foundRow = i + 2; // 1-based, +1 for header
             break;
           }
         }
@@ -61,45 +64,17 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
 
       var rowData = [
         id,
-        data.title || '',
-        data.artist || '',
-        data.upc || '',
-        data.isrc || '',
-        data.releaseType || '',
-        data.genre || '',
-        data.releaseDate || '',
-        data.status || '',
-        data.explicit || '',
-        data.tracks || '',
-        data.trackCount || 0,
-        data.collaborations || '',
-        data.features || '',
-        data.coverArtLink || '',
-        data.driveFolderLink || '',
-        data.promoLink || '',
-        data.submittedAt || '',
-        data.updatedAt || ''
+        String(data.title || '').trim(),
+        String(data.artist || '').trim(),
+        String(data.upc || '').trim(),
+        String(data.isrc || '').trim(),
+        String(data.releaseDate || '').trim()
       ];
 
-      var statusColors = {
-        'approved': '#d4edda',
-        'rejected': '#f8d7da',
-        'scheduled': '#cce5ff',
-        'released': '#d1ecf1',
-        'pending': '#fff3cd',
-        'under_review': '#e2d9f3'
-      };
-      var bgColor = statusColors[data.status] || '#ffffff';
-
-      if (rowIndex === -1) {
-        // New row
+      if (foundRow === -1) {
         sheet.appendRow(rowData);
-        sheet.getRange(sheet.getLastRow(), 9).setBackground(bgColor);
       } else {
-        // Update existing row
-        var targetRow = rowIndex + 2;
-        sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
-        sheet.getRange(targetRow, 9).setBackground(bgColor);
+        sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
       }
     }
 
@@ -119,7 +94,6 @@ function doGet() {
     .createTextOutput(JSON.stringify({ status: 'active' }))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
-
 // ── UI helpers ──────────────────────────────────────────────
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -243,9 +217,11 @@ const SHEETS_SCRIPT = `function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Releases') || ss.insertSheet('Releases');
 
-    // Always ensure header row exists with correct columns
-    var headers = ['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At'];
-    if (sheet.getLastRow() === 0 || sheet.getRange(1,1).getValue() !== 'ID') {
+    // Ensure correct header row
+    var headers = ['ID', 'Title', 'Artist', 'UPC', 'ISRC', 'Release Date'];
+    var firstCell = sheet.getLastRow() === 0 ? '' : String(sheet.getRange(1,1).getValue());
+    if (firstCell !== 'ID') {
+      sheet.clearContents();
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       sheet.getRange(1, 1, 1, headers.length)
         .setFontWeight('bold')
@@ -255,16 +231,17 @@ const SHEETS_SCRIPT = `function doPost(e) {
     }
 
     if (data.action === 'upsertRelease') {
-      var id = String(data.id).trim();
-      var lastRow = sheet.getLastRow();
-      var rowIndex = -1;
+      var id = String(data.id || '').trim();
+      if (!id) throw new Error('Missing release ID');
 
-      // Search for existing row by ID
-      if (lastRow > 1) {
-        var idCol = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-        for (var i = 0; i < idCol.length; i++) {
-          if (String(idCol[i][0]).trim() === id) {
-            rowIndex = i;
+      // Find existing row by scanning ID column
+      var lastRow = sheet.getLastRow();
+      var foundRow = -1;
+      if (lastRow >= 2) {
+        var idValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (var i = 0; i < idValues.length; i++) {
+          if (String(idValues[i][0]).trim() === id) {
+            foundRow = i + 2; // 1-based, +1 for header
             break;
           }
         }
@@ -272,45 +249,17 @@ const SHEETS_SCRIPT = `function doPost(e) {
 
       var rowData = [
         id,
-        data.title || '',
-        data.artist || '',
-        data.upc || '',
-        data.isrc || '',
-        data.releaseType || '',
-        data.genre || '',
-        data.releaseDate || '',
-        data.status || '',
-        data.explicit || '',
-        data.tracks || '',
-        data.trackCount || 0,
-        data.collaborations || '',
-        data.features || '',
-        data.coverArtLink || '',
-        data.driveFolderLink || '',
-        data.promoLink || '',
-        data.submittedAt || '',
-        data.updatedAt || ''
+        String(data.title || '').trim(),
+        String(data.artist || '').trim(),
+        String(data.upc || '').trim(),
+        String(data.isrc || '').trim(),
+        String(data.releaseDate || '').trim()
       ];
 
-      var statusColors = {
-        'approved': '#d4edda',
-        'rejected': '#f8d7da',
-        'scheduled': '#cce5ff',
-        'released': '#d1ecf1',
-        'pending': '#fff3cd',
-        'under_review': '#e2d9f3'
-      };
-      var bgColor = statusColors[data.status] || '#ffffff';
-
-      if (rowIndex === -1) {
-        // New row
+      if (foundRow === -1) {
         sheet.appendRow(rowData);
-        sheet.getRange(sheet.getLastRow(), 9).setBackground(bgColor);
       } else {
-        // Update existing row
-        var targetRow = rowIndex + 2;
-        sheet.getRange(targetRow, 1, 1, rowData.length).setValues([rowData]);
-        sheet.getRange(targetRow, 9).setBackground(bgColor);
+        sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
       }
     }
 
@@ -330,8 +279,7 @@ function doGet() {
     .createTextOutput(JSON.stringify({ status: 'active' }))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
-
-const SHEET_COLUMNS = ['ID','Title','Artist','UPC','ISRC','Type','Genre','Release Date','Status','Explicit','Tracks','Track Count','Collaborations','Features','Cover Art','Drive Folder','Promo','Submitted At','Updated At'];
+const SHEET_COLUMNS = ['ID','Title','Artist','UPC','ISRC','Release Date'];
 
 function SheetsTab({ settings, setSettings }: { settings: AdminSettingsType; setSettings: React.Dispatch<React.SetStateAction<AdminSettingsType>> }) {
   return (
