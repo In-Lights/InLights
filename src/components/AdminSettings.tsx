@@ -32,67 +32,51 @@ const APPS_SCRIPT_CODE = `function doPost(e) {
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Releases') || ss.insertSheet('Releases');
 
-    // Ensure correct header row
-    var headers = ['ID', 'Title', 'Artist', 'UPC', 'ISRC', 'Release Date'];
-    var firstCell = sheet.getLastRow() === 0 ? '' : String(sheet.getRange(1,1).getValue());
-    if (firstCell !== 'ID') {
-      sheet.clearContents();
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      sheet.getRange(1, 1, 1, headers.length)
-        .setFontWeight('bold')
-        .setBackground('#1a1a2e')
-        .setFontColor('#ffffff');
-      sheet.setFrozenRows(1);
-    }
+    // Always write correct headers to row 1
+    sheet.getRange(1, 1, 1, 6).setValues([['ID', 'Title', 'Artist', 'UPC', 'ISRC', 'Release Date']]);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
 
     if (data.action === 'upsertRelease') {
       var id = String(data.id || '').trim();
-      if (!id) throw new Error('Missing release ID');
+      if (!id) throw new Error('Missing ID');
 
-      // Find existing row by scanning ID column
       var lastRow = sheet.getLastRow();
       var foundRow = -1;
       if (lastRow >= 2) {
         var idValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
         for (var i = 0; i < idValues.length; i++) {
           if (String(idValues[i][0]).trim() === id) {
-            foundRow = i + 2; // 1-based, +1 for header
+            foundRow = i + 2;
             break;
           }
         }
       }
 
-      var rowData = [
+      var rowData = [[
         id,
         String(data.title || '').trim(),
         String(data.artist || '').trim(),
         String(data.upc || '').trim(),
         String(data.isrc || '').trim(),
         String(data.releaseDate || '').trim()
-      ];
+      ]];
 
       if (foundRow === -1) {
-        sheet.appendRow(rowData);
+        sheet.getRange(sheet.getLastRow() + 1, 1, 1, 6).setValues(rowData);
       } else {
-        sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
+        sheet.getRange(foundRow, 1, 1, 6).setValues(rowData);
       }
     }
 
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: true }))
-      .setMimeType(ContentService.MimeType.JSON);
-
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, version: 'v3' })).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ error: err.message })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
 function doGet() {
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'active' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'active', version: 'v3' })).setMimeType(ContentService.MimeType.JSON);
 }`;
 // ── UI helpers ──────────────────────────────────────────────
 
@@ -190,11 +174,11 @@ function CopyCodeButton({ code }: { code: string }) {
   );
 }
 
-function SyncAllSheetsButton({ webhookUrl }: { webhookUrl: string }) {
+function SyncAllSheetsButton({ webhookUrl }: { url?: string; webhookUrl: string }) {
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<{ sent: number } | null>(null);
   const handle = async () => {
-    if (!confirm('This will re-send all releases to your Google Sheet. Existing rows may duplicate depending on your Apps Script. Continue?')) return;
+    if (!confirm('Push all releases to Google Sheet? Existing rows will be updated in place.')) return;
     setSyncing(true); setResult(null);
     const r = await syncAllToSheets();
     setResult(r);
@@ -211,73 +195,86 @@ function SyncAllSheetsButton({ webhookUrl }: { webhookUrl: string }) {
   );
 }
 
+function TestScriptButton({ url }: { url: string }) {
+  const [status, setStatus] = useState<'idle'|'testing'|'ok'|'old'|'error'>('idle');
+  const [msg, setMsg] = useState('');
+  const test = async () => {
+    setStatus('testing'); setMsg('');
+    try {
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.version === 'v3') {
+        setStatus('ok'); setMsg('v3 confirmed — correct script ✓');
+      } else {
+        setStatus('old'); setMsg(`Old script detected — please redeploy with the new code`);
+      }
+    } catch {
+      setStatus('error'); setMsg('Cannot reach script — check URL or redeploy');
+    }
+  };
+  return (
+    <div className="flex items-center gap-3 mt-2">
+      <button onClick={test} disabled={status === 'testing'}
+        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 text-xs text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-50">
+        {status === 'testing' ? <><Loader2 className="w-3.5 h-3.5 animate-spin"/>Checking...</> : <>🔍 Verify Script Version</>}
+      </button>
+      {msg && <span className={`text-xs font-medium ${status === 'ok' ? 'text-emerald-400' : 'text-amber-400'}`}>{msg}</span>}
+    </div>
+  );
+}
+
+
 const SHEETS_SCRIPT = `function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName('Releases') || ss.insertSheet('Releases');
 
-    // Ensure correct header row
-    var headers = ['ID', 'Title', 'Artist', 'UPC', 'ISRC', 'Release Date'];
-    var firstCell = sheet.getLastRow() === 0 ? '' : String(sheet.getRange(1,1).getValue());
-    if (firstCell !== 'ID') {
-      sheet.clearContents();
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-      sheet.getRange(1, 1, 1, headers.length)
-        .setFontWeight('bold')
-        .setBackground('#1a1a2e')
-        .setFontColor('#ffffff');
-      sheet.setFrozenRows(1);
-    }
+    // Always write correct headers to row 1
+    sheet.getRange(1, 1, 1, 6).setValues([['ID', 'Title', 'Artist', 'UPC', 'ISRC', 'Release Date']]);
+    sheet.getRange(1, 1, 1, 6).setFontWeight('bold').setBackground('#1a1a2e').setFontColor('#ffffff');
+    sheet.setFrozenRows(1);
 
     if (data.action === 'upsertRelease') {
       var id = String(data.id || '').trim();
-      if (!id) throw new Error('Missing release ID');
+      if (!id) throw new Error('Missing ID');
 
-      // Find existing row by scanning ID column
       var lastRow = sheet.getLastRow();
       var foundRow = -1;
       if (lastRow >= 2) {
         var idValues = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
         for (var i = 0; i < idValues.length; i++) {
           if (String(idValues[i][0]).trim() === id) {
-            foundRow = i + 2; // 1-based, +1 for header
+            foundRow = i + 2;
             break;
           }
         }
       }
 
-      var rowData = [
+      var rowData = [[
         id,
         String(data.title || '').trim(),
         String(data.artist || '').trim(),
         String(data.upc || '').trim(),
         String(data.isrc || '').trim(),
         String(data.releaseDate || '').trim()
-      ];
+      ]];
 
       if (foundRow === -1) {
-        sheet.appendRow(rowData);
+        sheet.getRange(sheet.getLastRow() + 1, 1, 1, 6).setValues(rowData);
       } else {
-        sheet.getRange(foundRow, 1, 1, rowData.length).setValues([rowData]);
+        sheet.getRange(foundRow, 1, 1, 6).setValues(rowData);
       }
     }
 
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: true }))
-      .setMimeType(ContentService.MimeType.JSON);
-
+    return ContentService.createTextOutput(JSON.stringify({ ok: true, version: 'v3' })).setMimeType(ContentService.MimeType.JSON);
   } catch(err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: err.message }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return ContentService.createTextOutput(JSON.stringify({ error: err.message })).setMimeType(ContentService.MimeType.JSON);
   }
 }
 
 function doGet() {
-  return ContentService
-    .createTextOutput(JSON.stringify({ status: 'active' }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return ContentService.createTextOutput(JSON.stringify({ status: 'active', version: 'v3' })).setMimeType(ContentService.MimeType.JSON);
 }`;
 const SHEET_COLUMNS = ['ID','Title','Artist','UPC','ISRC','Release Date'];
 
@@ -320,6 +317,10 @@ function SheetsTab({ settings, setSettings }: { settings: AdminSettingsType; set
       </Section>
 
       <Section title="Step 2 — Paste your Web App URL" desc="From the Apps Script deployment dialog">
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 mb-3 text-xs text-amber-300 space-y-1">
+          <p className="font-bold">⚠️ Must create a NEW deployment each time you change the script</p>
+          <p className="text-amber-400/80">In Apps Script: Deploy → <strong className="text-amber-200">New deployment</strong> → Web app → Execute as: Me → Who has access: Anyone. Copy the fresh URL.</p>
+        </div>
         <Field label="Apps Script Web App URL" hint="https://script.google.com/macros/s/.../exec">
           <input
             type="url"
@@ -329,6 +330,7 @@ function SheetsTab({ settings, setSettings }: { settings: AdminSettingsType; set
             className="input-dark w-full px-4 py-2.5 rounded-xl font-mono text-sm"
           />
         </Field>
+        {settings.googleSheetsWebhook && <TestScriptButton url={settings.googleSheetsWebhook} />}
       </Section>
 
       <Section title="Sheet Columns" desc="Your sheet will be set up with these columns automatically">
