@@ -123,6 +123,8 @@ export interface DrivePickerProps {
   size?: 'sm' | 'md';
   /** Show a thumbnail preview extracted from the Drive link (for cover art) */
   showPreview?: boolean;
+  /** If true, hides the "paste Drive link" fallback input — upload button only */
+  uploadOnly?: boolean;
   /**
    * If set, after a file is picked the system silently copies it to a
    * "_Cover Art Backups" folder inside rootFolderId, renamed to this value.
@@ -139,6 +141,7 @@ export default function DrivePickerButton({
   size = 'md',
   showPreview = false,
   copyAsName,
+  uploadOnly = false,
 }: DrivePickerProps) {
 
   type Phase = 'idle' | 'loading' | 'auth' | 'folder' | 'open' | 'done' | 'error';
@@ -348,7 +351,7 @@ export default function DrivePickerButton({
         </div>
       )}
 
-      {/* ── Upload / paste row — shown when: no link yet, manual mode, or has link but not picked this session ── */}
+      {/* ── Upload / paste row ── */}
       {(!isPicked || showManual) && (
         <div className="flex gap-2">
           <button type="button" onClick={openPicker} disabled={busy || !apisReady}
@@ -360,21 +363,23 @@ export default function DrivePickerButton({
             {phase === 'open'   && <><Loader2 className="w-4 h-4 animate-spin" /><span className="text-sm">Opening…</span></>}
             {!busy && <><FolderOpen className="w-4 h-4" /><span className="text-sm font-semibold">Upload / Browse</span></>}
           </button>
-          <input type="url" value={value}
-            onChange={e => { onChange(e.target.value); setPickedName(''); setThumbError(false); }}
-            placeholder="…or paste Drive link"
-            className={`input-dark flex-1 ${pad} rounded-xl`} />
+          {!uploadOnly && (
+            <input type="url" value={value}
+              onChange={e => { onChange(e.target.value); setPickedName(''); setThumbError(false); }}
+              placeholder="…or paste Drive link"
+              className={`input-dark flex-1 ${pad} rounded-xl`} />
+          )}
         </div>
       )}
 
       {/* ── Toggle between picked-state and manual input ── */}
-      {isPicked && !showManual && (
+      {isPicked && !showManual && !uploadOnly && (
         <button onClick={() => setShowManual(true)}
           className="mt-1.5 flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-500">
           <Link2 className="w-3 h-3" /> Paste link instead
         </button>
       )}
-      {showManual && (
+      {showManual && !uploadOnly && (
         <button onClick={() => setShowManual(false)}
           className="mt-1.5 flex items-center gap-1 text-xs text-zinc-700 hover:text-zinc-500">
           <X className="w-3 h-3" /> Cancel

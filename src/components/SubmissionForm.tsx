@@ -667,6 +667,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                 hint="Upload your artwork directly"
                 required
                 showPreview
+                uploadOnly
                 subFolder="Cover Art"
                 pickerTitle="Upload Cover Art"
                 copyAsName={releaseTitle ? `${mainArtist} — ${releaseTitle}` : undefined}
@@ -810,64 +811,116 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                   </div>
 
                   {/* Credits + ISRC */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-medium text-zinc-400">
-                        Credits <span className="text-red-400">*</span>
-                        <span className="text-zinc-600 font-normal ml-1">— required fields</span>
-                      </label>
-                    </div>
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+                      Credits <span className="text-red-400">*</span>
+                    </label>
 
-                    {/* Core credits grid */}
-                    <div className="grid grid-cols-2 gap-2.5">
-                      {([['producedBy','Produced by'],['lyricsBy','Lyrics by'],['mixedBy','Mixed by'],['masteredBy','Mastered by']] as const).map(([k, lbl]) => (
-                        <input key={k} type="text" value={(track as Record<string, string>)[k]}
-                          onChange={e => updateTrack(idx, { [k]: e.target.value } as Partial<Track>)}
-                          placeholder={lbl + ' *'}
-                          className="input-dark px-3 py-2.5 rounded-lg text-sm" />
-                      ))}
-                    </div>
+                    {/* Each core role: supports multiple names */}
+                    {([
+                      ['producedBy',  'Produced by',  '🎛'],
+                      ['lyricsBy',    'Lyrics by',    '✍️'],
+                      ['mixedBy',     'Mixed by',     '🎚'],
+                      ['masteredBy',  'Mastered by',  '💿'],
+                    ] as const).map(([key, label, emoji]) => {
+                      // Split comma-separated into array for multi-entry UI
+                      const entries = ((track as Record<string,string>)[key] || '').split('|').filter((_, i, a) => i === 0 || a[i-1] !== undefined);
+                      // We store as pipe-separated internally for multi-value
+                      const vals = (track as Record<string,string>)[key]
+                        ? (track as Record<string,string>)[key].split('|')
+                        : [''];
+                      return (
+                        <div key={key} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-zinc-300">{emoji} {label} <span className="text-red-400">*</span></span>
+                            <button
+                              onClick={() => updateTrack(idx, { [key]: [...vals, ''].join('|') } as Partial<Track>)}
+                              className="flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 transition-colors"
+                            >
+                              <Plus className="w-3 h-3" /> Add
+                            </button>
+                          </div>
+                          {vals.map((v, vi) => (
+                            <div key={vi} className="flex gap-2">
+                              <input
+                                type="text"
+                                value={v}
+                                onChange={e => {
+                                  const newVals = [...vals];
+                                  newVals[vi] = e.target.value;
+                                  updateTrack(idx, { [key]: newVals.join('|') } as Partial<Track>);
+                                }}
+                                placeholder={`${label} name`}
+                                className="input-dark flex-1 px-3 py-2 rounded-lg text-sm"
+                              />
+                              {vals.length > 1 && (
+                                <button
+                                  onClick={() => {
+                                    const newVals = vals.filter((_, i) => i !== vi);
+                                    updateTrack(idx, { [key]: newVals.join('|') } as Partial<Track>);
+                                  }}
+                                  className="text-zinc-600 hover:text-red-400 transition-colors p-1.5 flex-shrink-0"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
 
-                    {/* ISRC — grouped with credits */}
-                    <input type="text" value={track.isrc || ''}
-                      onChange={e => updateTrack(idx, { isrc: e.target.value.toUpperCase() })}
-                      placeholder="ISRC — optional, label can fill later (e.g. USRC17607839)"
-                      className="input-dark w-full px-3 py-2.5 rounded-lg text-sm font-mono" />
-
-                    {/* Additional / custom credits */}
+                    {/* Custom / extra credit roles */}
                     {(track.additionalCredits || []).map((credit, ci) => (
-                      <div key={ci} className="flex gap-2 items-center">
-                        <input type="text" value={credit.role}
+                      <div key={ci} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <input
+                            type="text"
+                            value={credit.role}
+                            onChange={e => {
+                              const u = [...(track.additionalCredits || [])];
+                              u[ci] = { ...u[ci], role: e.target.value };
+                              updateTrack(idx, { additionalCredits: u });
+                            }}
+                            placeholder="Role (e.g. Arranger, Executive Producer)"
+                            className="input-dark flex-1 px-3 py-2 rounded-lg text-xs mr-2"
+                          />
+                          <button
+                            onClick={() => updateTrack(idx, { additionalCredits: (track.additionalCredits||[]).filter((_,i)=>i!==ci) })}
+                            className="text-zinc-600 hover:text-red-400 transition-colors p-1 flex-shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={credit.name}
                           onChange={e => {
-                            const updated = [...(track.additionalCredits || [])];
-                            updated[ci] = { ...updated[ci], role: e.target.value };
-                            updateTrack(idx, { additionalCredits: updated });
+                            const u = [...(track.additionalCredits || [])];
+                            u[ci] = { ...u[ci], name: e.target.value };
+                            updateTrack(idx, { additionalCredits: u });
                           }}
-                          placeholder="Role (e.g. Arranger, Vocal Coach)"
-                          className="input-dark px-3 py-2.5 rounded-lg text-sm w-2/5" />
-                        <input type="text" value={credit.name}
-                          onChange={e => {
-                            const updated = [...(track.additionalCredits || [])];
-                            updated[ci] = { ...updated[ci], name: e.target.value };
-                            updateTrack(idx, { additionalCredits: updated });
-                          }}
-                          placeholder="Name"
-                          className="input-dark px-3 py-2.5 rounded-lg text-sm flex-1" />
-                        <button onClick={() => {
-                          const updated = (track.additionalCredits || []).filter((_, i) => i !== ci);
-                          updateTrack(idx, { additionalCredits: updated });
-                        }} className="text-zinc-600 hover:text-red-400 transition-colors p-1.5 flex-shrink-0">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                          placeholder="Name(s)"
+                          className="input-dark w-full px-3 py-2 rounded-lg text-sm"
+                        />
                       </div>
                     ))}
 
                     <button
-                      onClick={() => updateTrack(idx, { additionalCredits: [...(track.additionalCredits || []), { role: '', name: '' }] })}
-                      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1.5 rounded-lg hover:bg-white/5 border border-dashed border-white/10 w-full justify-center"
+                      onClick={() => updateTrack(idx, { additionalCredits: [...(track.additionalCredits||[]), { role: '', name: '' }] })}
+                      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-violet-400 transition-colors px-3 py-2 rounded-xl border border-dashed border-white/10 hover:border-violet-500/30 w-full justify-center"
                     >
-                      <Plus className="w-3.5 h-3.5" /> Add another credit
+                      <Plus className="w-3.5 h-3.5" /> Add custom credit role
                     </button>
+
+                    {/* ISRC */}
+                    <div>
+                      <label className="block text-[11px] text-zinc-500 mb-1.5">ISRC <span className="text-zinc-600 font-normal">— optional, label can fill later</span></label>
+                      <input type="text" value={track.isrc || ''}
+                        onChange={e => updateTrack(idx, { isrc: e.target.value.toUpperCase() })}
+                        placeholder="e.g. USRC17607839"
+                        className="input-dark w-full px-3 py-2.5 rounded-lg text-sm font-mono" />
+                    </div>
                   </div>
                 </div>
               );

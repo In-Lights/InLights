@@ -524,34 +524,69 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                         <label className="block text-xs text-zinc-600 mb-1">Lyrics — Google Docs Link</label>
                         <input type="url" value={track.lyricsGoogleDocsLink || ''} onChange={e => updateTrack(i, { lyricsGoogleDocsLink: e.target.value })} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://docs.google.com/..." />
                       </div>
-                      <div className="space-y-3">
-                        {/* Core credits — each supports comma-separated multiple names */}
-                        {([['producedBy','Produced by'],['lyricsBy','Lyrics by'],['mixedBy','Mixed by'],['masteredBy','Mastered by']] as const).map(([k, lbl]) => (
-                          <div key={k}>
-                            <label className="block text-[11px] text-zinc-500 mb-1">{lbl}</label>
-                            <input type="text" value={(track as Record<string,string>)[k]}
-                              onChange={e => updateTrack(i, { [k]: e.target.value } as Partial<typeof track>)}
-                              placeholder={`${lbl} (separate multiple with comma)`}
-                              className="input-dark w-full px-3 py-2 rounded-lg text-sm" />
-                          </div>
-                        ))}
+                      <div className="space-y-2">
+                        <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Credits</label>
 
-                        {/* Additional custom credits */}
+                        {([
+                          ['producedBy', 'Produced by', '🎛'],
+                          ['lyricsBy',   'Lyrics by',   '✍️'],
+                          ['mixedBy',    'Mixed by',    '🎚'],
+                          ['masteredBy', 'Mastered by', '💿'],
+                        ] as const).map(([key, lbl, emoji]) => {
+                          const vals = (track as Record<string,string>)[key]
+                            ? (track as Record<string,string>)[key].split('|')
+                            : [''];
+                          return (
+                            <div key={key} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[11px] font-medium text-zinc-400">{emoji} {lbl}</span>
+                                <button
+                                  onClick={() => updateTrack(i, { [key]: [...vals, ''].join('|') } as Partial<typeof track>)}
+                                  className="flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 transition-colors"
+                                >
+                                  <Plus className="w-3 h-3" /> Add
+                                </button>
+                              </div>
+                              {vals.map((v, vi) => (
+                                <div key={vi} className="flex gap-2">
+                                  <input type="text" value={v}
+                                    onChange={e => {
+                                      const nv = [...vals]; nv[vi] = e.target.value;
+                                      updateTrack(i, { [key]: nv.join('|') } as Partial<typeof track>);
+                                    }}
+                                    placeholder={lbl}
+                                    className="input-dark flex-1 px-3 py-2 rounded-lg text-sm" />
+                                  {vals.length > 1 && (
+                                    <button onClick={() => {
+                                      const nv = vals.filter((_,j)=>j!==vi);
+                                      updateTrack(i, { [key]: nv.join('|') } as Partial<typeof track>);
+                                    }} className="text-zinc-600 hover:text-red-400 p-1.5 flex-shrink-0">
+                                      <Trash2 className="w-3.5 h-3.5"/>
+                                    </button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+
                         {(track.additionalCredits || []).map((cr, ci) => (
-                          <div key={ci} className="flex gap-2">
-                            <input type="text" value={cr.role}
-                              onChange={e => { const u = [...(track.additionalCredits||[])]; u[ci]={...u[ci],role:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
-                              placeholder="Role" className="input-dark px-3 py-2 rounded-lg text-sm w-2/5" />
+                          <div key={ci} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <input type="text" value={cr.role}
+                                onChange={e => { const u=[...(track.additionalCredits||[])]; u[ci]={...u[ci],role:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
+                                placeholder="Role" className="input-dark flex-1 px-3 py-2 rounded-lg text-xs mr-2" />
+                              <button onClick={() => updateTrack(i,{additionalCredits:(track.additionalCredits||[]).filter((_,j)=>j!==ci)})}
+                                className="text-zinc-600 hover:text-red-400 p-1 flex-shrink-0"><Trash2 className="w-3.5 h-3.5"/></button>
+                            </div>
                             <input type="text" value={cr.name}
-                              onChange={e => { const u = [...(track.additionalCredits||[])]; u[ci]={...u[ci],name:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
-                              placeholder="Name(s)" className="input-dark px-3 py-2 rounded-lg text-sm flex-1" />
-                            <button onClick={() => updateTrack(i,{additionalCredits:(track.additionalCredits||[]).filter((_,j)=>j!==ci)})}
-                              className="text-zinc-600 hover:text-red-400 transition-colors p-1 flex-shrink-0"><Trash2 className="w-3.5 h-3.5"/></button>
+                              onChange={e => { const u=[...(track.additionalCredits||[])]; u[ci]={...u[ci],name:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
+                              placeholder="Name(s)" className="input-dark w-full px-3 py-2 rounded-lg text-sm" />
                           </div>
                         ))}
                         <button onClick={() => updateTrack(i,{additionalCredits:[...(track.additionalCredits||[]),{role:'',name:''}]})}
-                          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-violet-400 transition-colors px-2 py-1.5 rounded-lg hover:bg-white/5 border border-dashed border-white/10 w-full justify-center">
-                          <Plus className="w-3.5 h-3.5"/> Add credit role
+                          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-violet-400 transition-colors px-3 py-2 rounded-xl border border-dashed border-white/10 hover:border-violet-500/30 w-full justify-center">
+                          <Plus className="w-3.5 h-3.5"/> Add custom credit role
                         </button>
 
                         {/* ISRC + UPC together */}
@@ -584,10 +619,10 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2 text-xs text-zinc-500 mt-2">
-                        {track.producedBy && <span>Produced: {track.producedBy}</span>}
-                        {track.lyricsBy && <span>Lyrics: {track.lyricsBy}</span>}
-                        {track.mixedBy && <span>Mixed: {track.mixedBy}</span>}
-                        {track.masteredBy && <span>Mastered: {track.masteredBy}</span>}
+                        {track.producedBy && <span>Produced: {track.producedBy.replace(/\|/g, ', ')}</span>}
+                        {track.lyricsBy && <span>Lyrics: {track.lyricsBy.replace(/\|/g, ', ')}</span>}
+                        {track.mixedBy && <span>Mixed: {track.mixedBy.replace(/\|/g, ', ')}</span>}
+                        {track.masteredBy && <span>Mastered: {track.masteredBy.replace(/\|/g, ', ')}</span>}
                         {(track.additionalCredits||[]).map((cr,ci) => cr.name && (
                           <span key={ci}>{cr.role}: {cr.name}</span>
                         ))}
