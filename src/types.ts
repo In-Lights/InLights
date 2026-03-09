@@ -60,6 +60,7 @@ export interface Track {
   mixedBy: string;
   masteredBy: string;
   isrc?: string;
+  additionalCredits?: { role: string; name: string }[];
 }
 
 export interface ReleaseSubmission {

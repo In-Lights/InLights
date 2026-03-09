@@ -56,6 +56,7 @@ const emptyTrack = (): Track => ({
   title: '', previewStart: '0:00', previewEnd: '0:30', explicit: false,
   wavDriveLink: '', lyricsDriveLink: '', lyricsGoogleDocsLink: '',
   producedBy: '', lyricsBy: '', mixedBy: '', masteredBy: '',
+  additionalCredits: [],
 });
 const emptyCollab = (): Collaborator => ({
   name: '', role: 'artist', platformLinks: { spotify: '', appleMusic: '', anghami: '' },
@@ -225,12 +226,14 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
   // ── validation ──
   const isStep1Valid = mainArtist.trim().length > 0;
   const isStep2Valid = releaseTitle.trim().length > 0 && isDateValid && genre.length > 0 && coverArtDriveLink.trim().length > 0;
-  const isStep3Valid = tracks.length >= limits.min && tracks.every(t =>
-    t.title.trim() && t.wavDriveLink.trim() &&
-    (!settings.requireLyrics || t.lyricsDriveLink?.trim() || t.lyricsGoogleDocsLink?.trim()) &&
-    t.mixedBy.trim() && t.masteredBy.trim() &&
-    t.producedBy.trim() && t.lyricsBy.trim()
-  );
+  // For singles: track title auto-filled from releaseTitle, only need wav
+  const isStep3Valid = tracks.length >= limits.min && tracks.every((t, idx) => {
+    const effectiveTitle = releaseType === 'single' && idx === 0 ? releaseTitle : t.title;
+    return effectiveTitle.trim() && t.wavDriveLink.trim() &&
+      (!settings.requireLyrics || t.lyricsDriveLink?.trim() || t.lyricsGoogleDocsLink?.trim()) &&
+      t.mixedBy.trim() && t.masteredBy.trim() &&
+      t.producedBy.trim() && t.lyricsBy.trim();
+  });
   const isStep4Valid =
     rightsConfirmed &&
     (!settings.requireDriveFolder || driveFolderLink.trim().length > 0) &&
@@ -260,11 +263,15 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
   // ── submit ──
   const handleSubmit = async () => {
     setSubmitting(true); setSubmitError('');
+    // For singles, auto-fill track title from release title
+    const finalTracks = tracks.map((t, idx) =>
+      releaseType === 'single' && idx === 0 ? { ...t, title: t.title || releaseTitle } : t
+    );
     const data: Omit<ReleaseSubmission, 'id' | 'createdAt' | 'updatedAt' | 'status'> = {
       mainArtist, collaborations: collaborations.filter(c => c.name.trim()),
       features: features.filter(f => f.name.trim()),
       releaseType, releaseTitle, releaseDate, explicitContent, genre,
-      coverArtDriveLink, coverArtImageUrl: '', tracks,
+      coverArtDriveLink, coverArtImageUrl: '', tracks: finalTracks,
       promoDriveLink: promoDriveLink || undefined,
       driveFolderLink: driveFolderLink || undefined,
       rightsConfirmed,
@@ -650,20 +657,28 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
             <div className="glass-card rounded-2xl p-6 space-y-5">
               <div>
                 <h3 className="font-semibold mb-1">Cover Art</h3>
-                <p className="text-xs text-zinc-500">JPG or PNG, 3000×3000px recommended</p>
+                <p className="text-xs text-zinc-500">JPG or PNG, 3000×3000px recommended — upload only</p>
               </div>
 
               <DrivePickerButton
                 value={coverArtDriveLink}
                 onChange={(link) => setCoverArtDriveLink(link)}
                 label="Cover Art File"
-                hint="Upload the artwork file or paste a Google Drive share link"
+                hint="Upload your artwork directly"
                 required
                 showPreview
                 subFolder="Cover Art"
                 pickerTitle="Upload Cover Art"
                 {...driveProps}
               />
+
+              {/* Drive not configured — plain upload via link is removed, show note */}
+              {!driveProps.clientId && (
+                <p className="text-xs text-amber-400 flex items-center gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                  Drive upload not configured — paste a public Drive link instead
+                </p>
+              )}
             </div>
 
             <div className="flex justify-between">
@@ -697,8 +712,10 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
             </div>
 
             {tracks.map((track, idx) => {
-              const trackFolderName = `Track ${String(idx + 1).padStart(2, '0')}${track.title ? ` — ${track.title}` : ''}`;
-              const displayName = buildTrackDisplay(track.title, features);
+              const isSingleTrack = releaseType === 'single' && idx === 0;
+              const effectiveTitle = isSingleTrack ? releaseTitle : track.title;
+              const trackFolderName = `Track ${String(idx + 1).padStart(2, '0')}${effectiveTitle ? ` — ${effectiveTitle}` : ''}`;
+              const displayName = buildTrackDisplay(effectiveTitle, features);
               return (
                 <div key={idx} className="glass-card rounded-2xl p-6 space-y-4">
                   <div className="flex items-center justify-between">
@@ -717,11 +734,22 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
 
                   {/* Title + Explicit */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs font-medium text-zinc-400 mb-1.5">Track Title <span className="text-red-400">*</span></label>
-                      <input type="text" value={track.title} onChange={e => updateTrack(idx, { title: e.target.value })}
-                        placeholder="Track title" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
-                    </div>
+                    {isSingleTrack ? (
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Track Title</label>
+                        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-emerald-500/8 border border-emerald-500/20">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                          <span className="text-sm text-emerald-300 font-medium">{releaseTitle}</span>
+                          <span className="text-xs text-zinc-500 ml-auto">auto-filled from release title</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="sm:col-span-2">
+                        <label className="block text-xs font-medium text-zinc-400 mb-1.5">Track Title <span className="text-red-400">*</span></label>
+                        <input type="text" value={track.title} onChange={e => updateTrack(idx, { title: e.target.value })}
+                          placeholder="Track title" className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
+                      </div>
+                    )}
                     <div>
                       <label className="block text-xs font-medium text-zinc-400 mb-1.5">Explicit</label>
                       <div className="flex gap-2">
@@ -780,12 +808,16 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                       placeholder="https://docs.google.com/document/d/..." className="input-dark w-full px-3 py-2.5 rounded-lg text-sm" />
                   </div>
 
-                  {/* Credits */}
-                  <div>
-                    <label className="block text-xs font-medium text-zinc-400 mb-2">
-                      Credits <span className="text-red-400">*</span>
-                      <span className="text-zinc-600 font-normal ml-1">— all fields required</span>
-                    </label>
+                  {/* Credits + ISRC */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-zinc-400">
+                        Credits <span className="text-red-400">*</span>
+                        <span className="text-zinc-600 font-normal ml-1">— required fields</span>
+                      </label>
+                    </div>
+
+                    {/* Core credits grid */}
                     <div className="grid grid-cols-2 gap-2.5">
                       {([['producedBy','Produced by'],['lyricsBy','Lyrics by'],['mixedBy','Mixed by'],['masteredBy','Mastered by']] as const).map(([k, lbl]) => (
                         <input key={k} type="text" value={(track as Record<string, string>)[k]}
@@ -794,12 +826,47 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                           className="input-dark px-3 py-2.5 rounded-lg text-sm" />
                       ))}
                     </div>
-                    <div className="mt-2.5">
-                      <input type="text" value={track.isrc || ''}
-                        onChange={e => updateTrack(idx, { isrc: e.target.value.toUpperCase() })}
-                        placeholder="ISRC (e.g. USRC17607839) — optional, admin can fill later"
-                        className="input-dark w-full px-3 py-2.5 rounded-lg text-sm font-mono" />
-                    </div>
+
+                    {/* ISRC — grouped with credits */}
+                    <input type="text" value={track.isrc || ''}
+                      onChange={e => updateTrack(idx, { isrc: e.target.value.toUpperCase() })}
+                      placeholder="ISRC — optional, label can fill later (e.g. USRC17607839)"
+                      className="input-dark w-full px-3 py-2.5 rounded-lg text-sm font-mono" />
+
+                    {/* Additional / custom credits */}
+                    {(track.additionalCredits || []).map((credit, ci) => (
+                      <div key={ci} className="flex gap-2 items-center">
+                        <input type="text" value={credit.role}
+                          onChange={e => {
+                            const updated = [...(track.additionalCredits || [])];
+                            updated[ci] = { ...updated[ci], role: e.target.value };
+                            updateTrack(idx, { additionalCredits: updated });
+                          }}
+                          placeholder="Role (e.g. Arranger, Vocal Coach)"
+                          className="input-dark px-3 py-2.5 rounded-lg text-sm w-2/5" />
+                        <input type="text" value={credit.name}
+                          onChange={e => {
+                            const updated = [...(track.additionalCredits || [])];
+                            updated[ci] = { ...updated[ci], name: e.target.value };
+                            updateTrack(idx, { additionalCredits: updated });
+                          }}
+                          placeholder="Name"
+                          className="input-dark px-3 py-2.5 rounded-lg text-sm flex-1" />
+                        <button onClick={() => {
+                          const updated = (track.additionalCredits || []).filter((_, i) => i !== ci);
+                          updateTrack(idx, { additionalCredits: updated });
+                        }} className="text-zinc-600 hover:text-red-400 transition-colors p-1.5 flex-shrink-0">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+
+                    <button
+                      onClick={() => updateTrack(idx, { additionalCredits: [...(track.additionalCredits || []), { role: '', name: '' }] })}
+                      className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-zinc-300 transition-colors px-2 py-1.5 rounded-lg hover:bg-white/5 border border-dashed border-white/10 w-full justify-center"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add another credit
+                    </button>
                   </div>
                 </div>
               );

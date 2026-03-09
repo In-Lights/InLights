@@ -224,7 +224,7 @@ export default function DrivePickerButton({
         .setDeveloperKey(apiKey)
         .addView(UpView)
         .addView(BrowseView)
-        .setCallback((data: PickerData) => {
+        .setCallback(async (data: PickerData) => {
           if (data.action === 'picked' && data.docs?.length) {
             const f = data.docs[0];
             const link = `https://drive.google.com/file/d/${f.id}/view?usp=sharing`;
@@ -236,6 +236,32 @@ export default function DrivePickerButton({
             setPhase('done');
           } else if (data.action === 'cancel') {
             setPhase('idle');
+            // Clean up: delete the subfolder we just created if nothing was uploaded
+            // Only clean up if the user hasn't already uploaded a file (value is empty)
+            if (!value) {
+              try {
+                const tok = await getToken().catch(() => null);
+                if (tok) {
+                  const subKey = `${releaseKey}||${subFolder}`;
+                  const subId = _folderCache.get(subKey);
+                  if (subId) {
+                    // Check if folder is empty before deleting
+                    const res = await fetch(
+                      `https://www.googleapis.com/drive/v3/files?q='${subId}'+in+parents+and+trashed=false&fields=files(id)`,
+                      { headers: { Authorization: `Bearer ${tok}` } }
+                    );
+                    const json = await res.json();
+                    if (!json.files?.length) {
+                      await fetch(`https://www.googleapis.com/drive/v3/files/${subId}`, {
+                        method: 'DELETE',
+                        headers: { Authorization: `Bearer ${tok}` },
+                      });
+                      _folderCache.delete(subKey);
+                    }
+                  }
+                }
+              } catch { /* silent cleanup — don't block the user */ }
+            }
           }
         })
         .build();
