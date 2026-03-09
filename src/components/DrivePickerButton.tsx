@@ -123,6 +123,12 @@ export interface DrivePickerProps {
   size?: 'sm' | 'md';
   /** Show a thumbnail preview extracted from the Drive link (for cover art) */
   showPreview?: boolean;
+  /**
+   * If set, after a file is picked the system silently copies it to a
+   * "_Cover Art Backups" folder inside rootFolderId, renamed to this value.
+   * Use for cover art so the label retains a copy even if the artist deletes theirs.
+   */
+  copyAsName?: string;
 }
 
 export default function DrivePickerButton({
@@ -132,6 +138,7 @@ export default function DrivePickerButton({
   pickerTitle = 'Select or Upload',
   size = 'md',
   showPreview = false,
+  copyAsName,
 }: DrivePickerProps) {
 
   type Phase = 'idle' | 'loading' | 'auth' | 'folder' | 'open' | 'done' | 'error';
@@ -234,6 +241,29 @@ export default function DrivePickerButton({
             onChange(link, f.name);
             setShowManual(false);
             setPhase('done');
+
+            // ── Silently copy cover art to label's backup folder ──
+            if (copyAsName) {
+              try {
+                const tok = await getToken().catch(() => null);
+                if (tok) {
+                  // Find or create "_Cover Art Backups" folder in root
+                  const backupFolderId = await findOrCreate('_Cover Art Backups', rootFolderId, tok);
+                  // Get file extension
+                  const ext = f.name.includes('.') ? '.' + f.name.split('.').pop() : '';
+                  const safeName = copyAsName.replace(/[^\w\s\-–—]/g, '').trim();
+                  const backupName = `${safeName} — Cover Art${ext}`;
+                  // Copy the file with the new name into the backup folder
+                  await driveApiFetch('files/' + f.id + '/copy', tok, {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      name: backupName,
+                      parents: [backupFolderId],
+                    }),
+                  });
+                }
+              } catch { /* silent — backup is best-effort */ }
+            }
           } else if (data.action === 'cancel') {
             setPhase('idle');
             // Clean up: delete the subfolder we just created if nothing was uploaded

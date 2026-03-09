@@ -669,6 +669,7 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                 showPreview
                 subFolder="Cover Art"
                 pickerTitle="Upload Cover Art"
+                copyAsName={releaseTitle ? `${mainArtist} — ${releaseTitle}` : undefined}
                 {...driveProps}
               />
 

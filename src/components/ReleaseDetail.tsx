@@ -366,16 +366,17 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                     <button onClick={() => setExplicitContent(true)} className={`px-4 py-2 rounded-lg border text-xs font-medium ${explicitContent ? 'border-red-500 bg-red-500/10 text-red-400' : 'border-zinc-800 text-zinc-500'}`}>Yes</button>
                   </div>
                 </div>
-                <div>
-                  <label className="block text-xs text-zinc-500 mb-1">Cover Art — Google Drive Link</label>
-                  <input type="url" value={coverArtDriveLink} onChange={e => setCoverArtDriveLink(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://drive.google.com/..." />
-                </div>
-                <div>
-                  <p className="text-xs text-zinc-500 mb-1">Cover Art Preview</p>
-                  {artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink) && (
-                    <img src={artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)!} alt="Preview" className="w-20 h-20 rounded-lg object-cover border border-white/10 bg-zinc-900"
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                  )}
+                <div className="space-y-2">
+                  <label className="block text-xs text-zinc-500">Cover Art — Drive Link</label>
+                  <input type="url" value={coverArtDriveLink} onChange={e => setCoverArtDriveLink(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://drive.google.com/file/d/..." />
+                  {coverArtDriveLink && (() => {
+                    const src = artworkSrc('', coverArtDriveLink);
+                    return src ? (
+                      <img src={src} alt="Preview" className="w-20 h-20 rounded-lg object-cover border border-white/10 bg-zinc-900"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                    ) : null;
+                  })()}
+                  <p className="text-[11px] text-zinc-600">Artist uploads via submission form — admin can override here</p>
                 </div>
               </div>
             ) : (
@@ -523,12 +524,47 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                         <label className="block text-xs text-zinc-600 mb-1">Lyrics — Google Docs Link</label>
                         <input type="url" value={track.lyricsGoogleDocsLink || ''} onChange={e => updateTrack(i, { lyricsGoogleDocsLink: e.target.value })} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://docs.google.com/..." />
                       </div>
-                      <div className="grid grid-cols-2 gap-3">
-                        <input type="text" value={track.producedBy} onChange={e => updateTrack(i, { producedBy: e.target.value })} placeholder="Produced by" className="input-dark px-3 py-2 rounded-lg text-sm" />
-                        <input type="text" value={track.lyricsBy} onChange={e => updateTrack(i, { lyricsBy: e.target.value })} placeholder="Lyrics by" className="input-dark px-3 py-2 rounded-lg text-sm" />
-                        <input type="text" value={track.mixedBy} onChange={e => updateTrack(i, { mixedBy: e.target.value })} placeholder="Mixed by" className="input-dark px-3 py-2 rounded-lg text-sm" />
-                        <input type="text" value={track.masteredBy} onChange={e => updateTrack(i, { masteredBy: e.target.value })} placeholder="Mastered by" className="input-dark px-3 py-2 rounded-lg text-sm" />
-                        <input type="text" value={track.isrc || ''} onChange={e => updateTrack(i, { isrc: e.target.value.toUpperCase() })} placeholder="ISRC code" className="input-dark col-span-2 px-3 py-2 rounded-lg text-sm font-mono" />
+                      <div className="space-y-3">
+                        {/* Core credits — each supports comma-separated multiple names */}
+                        {([['producedBy','Produced by'],['lyricsBy','Lyrics by'],['mixedBy','Mixed by'],['masteredBy','Mastered by']] as const).map(([k, lbl]) => (
+                          <div key={k}>
+                            <label className="block text-[11px] text-zinc-500 mb-1">{lbl}</label>
+                            <input type="text" value={(track as Record<string,string>)[k]}
+                              onChange={e => updateTrack(i, { [k]: e.target.value } as Partial<typeof track>)}
+                              placeholder={`${lbl} (separate multiple with comma)`}
+                              className="input-dark w-full px-3 py-2 rounded-lg text-sm" />
+                          </div>
+                        ))}
+
+                        {/* Additional custom credits */}
+                        {(track.additionalCredits || []).map((cr, ci) => (
+                          <div key={ci} className="flex gap-2">
+                            <input type="text" value={cr.role}
+                              onChange={e => { const u = [...(track.additionalCredits||[])]; u[ci]={...u[ci],role:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
+                              placeholder="Role" className="input-dark px-3 py-2 rounded-lg text-sm w-2/5" />
+                            <input type="text" value={cr.name}
+                              onChange={e => { const u = [...(track.additionalCredits||[])]; u[ci]={...u[ci],name:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
+                              placeholder="Name(s)" className="input-dark px-3 py-2 rounded-lg text-sm flex-1" />
+                            <button onClick={() => updateTrack(i,{additionalCredits:(track.additionalCredits||[]).filter((_,j)=>j!==ci)})}
+                              className="text-zinc-600 hover:text-red-400 transition-colors p-1 flex-shrink-0"><Trash2 className="w-3.5 h-3.5"/></button>
+                          </div>
+                        ))}
+                        <button onClick={() => updateTrack(i,{additionalCredits:[...(track.additionalCredits||[]),{role:'',name:''}]})}
+                          className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-violet-400 transition-colors px-2 py-1.5 rounded-lg hover:bg-white/5 border border-dashed border-white/10 w-full justify-center">
+                          <Plus className="w-3.5 h-3.5"/> Add credit role
+                        </button>
+
+                        {/* ISRC + UPC together */}
+                        <div className="grid grid-cols-2 gap-2 pt-1">
+                          <div>
+                            <label className="block text-[11px] text-zinc-500 mb-1">ISRC</label>
+                            <input type="text" value={track.isrc || ''} onChange={e => updateTrack(i, { isrc: e.target.value.toUpperCase() })} placeholder="USRC17607839" className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono" />
+                          </div>
+                          <div>
+                            <label className="block text-[11px] text-zinc-500 mb-1">UPC / EAN</label>
+                            <input type="text" value={upc} onChange={e => setUpc(e.target.value)} placeholder="012345678905" className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono" />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -552,7 +588,11 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                         {track.lyricsBy && <span>Lyrics: {track.lyricsBy}</span>}
                         {track.mixedBy && <span>Mixed: {track.mixedBy}</span>}
                         {track.masteredBy && <span>Mastered: {track.masteredBy}</span>}
-                        {track.isrc && <span className="col-span-2 font-mono text-zinc-400">ISRC: {track.isrc}</span>}
+                        {(track.additionalCredits||[]).map((cr,ci) => cr.name && (
+                          <span key={ci}>{cr.role}: {cr.name}</span>
+                        ))}
+                        {track.isrc && <span className="font-mono text-zinc-400">ISRC: {track.isrc}</span>}
+                        {upc && <span className="font-mono text-zinc-400">UPC: {upc}</span>}
                       </div>
                       <div className="flex flex-wrap gap-3 mt-2">
                         {renderLink(track.wavDriveLink, 'WAV File')}
@@ -616,16 +656,6 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                     </button>
                   ))}
                 </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-zinc-400 mb-2">UPC / EAN Barcode</label>
-                <input
-                  type="text"
-                  value={upc}
-                  onChange={e => setUpc(e.target.value)}
-                  placeholder="e.g. 012345678905"
-                  className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono"
-                />
               </div>
               <div>
                 <label className="block text-xs font-medium text-zinc-400 mb-2">Status</label>
