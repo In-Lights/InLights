@@ -524,64 +524,66 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                         <label className="block text-xs text-zinc-600 mb-1">Lyrics — Google Docs Link</label>
                         <input type="url" value={track.lyricsGoogleDocsLink || ''} onChange={e => updateTrack(i, { lyricsGoogleDocsLink: e.target.value })} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="https://docs.google.com/..." />
                       </div>
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         <label className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Credits</label>
 
-                        {([
-                          ['producedBy', 'Produced by', '🎛'],
-                          ['lyricsBy',   'Lyrics by',   '✍️'],
-                          ['mixedBy',    'Mixed by',    '🎚'],
-                          ['masteredBy', 'Mastered by', '💿'],
-                        ] as const).map(([key, lbl, emoji]) => {
-                          const vals = (track as Record<string,string>)[key]
-                            ? (track as Record<string,string>)[key].split('|')
-                            : [''];
-                          return (
-                            <div key={key} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="text-[11px] font-medium text-zinc-400">{emoji} {lbl}</span>
-                                <button
-                                  onClick={() => updateTrack(i, { [key]: [...vals, ''].join('|') } as Partial<typeof track>)}
-                                  className="flex items-center gap-1 text-[11px] text-violet-400 hover:text-violet-300 transition-colors"
-                                >
-                                  <Plus className="w-3 h-3" /> Add
-                                </button>
-                              </div>
-                              {vals.map((v, vi) => (
-                                <div key={vi} className="flex gap-2">
-                                  <input type="text" value={v}
-                                    onChange={e => {
-                                      const nv = [...vals]; nv[vi] = e.target.value;
-                                      updateTrack(i, { [key]: nv.join('|') } as Partial<typeof track>);
-                                    }}
-                                    placeholder={lbl}
-                                    className="input-dark flex-1 px-3 py-2 rounded-lg text-sm" />
-                                  {vals.length > 1 && (
-                                    <button onClick={() => {
-                                      const nv = vals.filter((_,j)=>j!==vi);
-                                      updateTrack(i, { [key]: nv.join('|') } as Partial<typeof track>);
-                                    }} className="text-zinc-600 hover:text-red-400 p-1.5 flex-shrink-0">
-                                      <Trash2 className="w-3.5 h-3.5"/>
-                                    </button>
-                                  )}
+                        <div className="grid grid-cols-2 gap-3">
+                          {([
+                            ['producedBy', 'Produced by'],
+                            ['lyricsBy',   'Lyrics by'],
+                            ['mixedBy',    'Mixed by'],
+                            ['masteredBy', 'Mastered by'],
+                          ] as const).map(([key, lbl]) => {
+                            const vals = (track as Record<string,string>)[key]
+                              ? (track as Record<string,string>)[key].split('|')
+                              : [''];
+                            return (
+                              <div key={key} className="space-y-1.5">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-semibold text-zinc-400">{lbl}</span>
+                                  <button
+                                    onClick={() => updateTrack(i, { [key]: [...vals, ''].join('|') } as Partial<typeof track>)}
+                                    className="flex items-center gap-0.5 text-[11px] text-violet-400 hover:text-violet-300 transition-colors"
+                                  >
+                                    <Plus className="w-3 h-3" /> Add
+                                  </button>
                                 </div>
-                              ))}
-                            </div>
-                          );
-                        })}
+                                {vals.map((v, vi) => (
+                                  <div key={vi} className="flex gap-1.5">
+                                    <input type="text" value={v}
+                                      onChange={e => {
+                                        const nv = [...vals]; nv[vi] = e.target.value;
+                                        updateTrack(i, { [key]: nv.join('|') } as Partial<typeof track>);
+                                      }}
+                                      placeholder={lbl}
+                                      className="input-dark flex-1 px-2.5 py-2 rounded-lg text-sm" />
+                                    {vals.length > 1 && (
+                                      <button onClick={() => {
+                                        const nv = vals.filter((_,j)=>j!==vi);
+                                        updateTrack(i, { [key]: nv.join('|') } as Partial<typeof track>);
+                                      }} className="text-zinc-700 hover:text-red-400 p-1 flex-shrink-0">
+                                        <Trash2 className="w-3 h-3"/>
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })}
+                        </div>
 
                         {(track.additionalCredits || []).map((cr, ci) => (
-                          <div key={ci} className="bg-white/[0.02] border border-white/5 rounded-xl p-3 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <input type="text" value={cr.role}
-                                onChange={e => { const u=[...(track.additionalCredits||[])]; u[ci]={...u[ci],role:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
-                                placeholder="Role" className="input-dark flex-1 px-3 py-2 rounded-lg text-xs mr-2" />
+                          <div key={ci} className="grid grid-cols-2 gap-1.5 items-start">
+                            <input type="text" value={cr.role}
+                              onChange={e => { const u=[...(track.additionalCredits||[])]; u[ci]={...u[ci],role:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
+                              placeholder="Role" className="input-dark px-2.5 py-2 rounded-lg text-sm" />
+                            <div className="flex gap-1.5">
+                              <input type="text" value={cr.name}
+                                onChange={e => { const u=[...(track.additionalCredits||[])]; u[ci]={...u[ci],name:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
+                                placeholder="Name(s)" className="input-dark flex-1 px-2.5 py-2 rounded-lg text-sm" />
                               <button onClick={() => updateTrack(i,{additionalCredits:(track.additionalCredits||[]).filter((_,j)=>j!==ci)})}
-                                className="text-zinc-600 hover:text-red-400 p-1 flex-shrink-0"><Trash2 className="w-3.5 h-3.5"/></button>
+                                className="text-zinc-700 hover:text-red-400 p-1 flex-shrink-0"><Trash2 className="w-3 h-3"/></button>
                             </div>
-                            <input type="text" value={cr.name}
-                              onChange={e => { const u=[...(track.additionalCredits||[])]; u[ci]={...u[ci],name:e.target.value}; updateTrack(i,{additionalCredits:u}); }}
-                              placeholder="Name(s)" className="input-dark w-full px-3 py-2 rounded-lg text-sm" />
                           </div>
                         ))}
                         <button onClick={() => updateTrack(i,{additionalCredits:[...(track.additionalCredits||[]),{role:'',name:''}]})}
@@ -589,7 +591,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
                           <Plus className="w-3.5 h-3.5"/> Add custom credit role
                         </button>
 
-                        {/* ISRC + UPC together */}
+                        {/* ISRC + UPC */}
                         <div className="grid grid-cols-2 gap-2 pt-1">
                           <div>
                             <label className="block text-[11px] text-zinc-500 mb-1">ISRC</label>
