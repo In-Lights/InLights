@@ -911,14 +911,6 @@ export default function SubmissionForm({ settings, onSubmitted }: Props) {
                       <Plus className="w-3.5 h-3.5" /> Add custom credit role
                     </button>
 
-                    {/* ISRC */}
-                    <div>
-                      <label className="block text-[11px] text-zinc-500 mb-1.5">ISRC <span className="text-zinc-600">— optional, label can fill later</span></label>
-                      <input type="text" value={track.isrc || ''}
-                        onChange={e => updateTrack(idx, { isrc: e.target.value.toUpperCase() })}
-                        placeholder="e.g. USRC17607839"
-                        className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono" />
-                    </div>
                   </div>
                 </div>
               );
