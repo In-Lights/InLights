@@ -242,6 +242,7 @@ function App() {
               onBack={() => { setAdminView('dashboard'); setSelectedRelease(null); setRefreshKey(k => k + 1); }}
               commentsEnabled={adminSettings.internalCommentsEnabled ?? true}
               noteTemplates={adminSettings.noteTemplates}
+              adminSettings={adminSettings}
               statusLabels={{
                 pending: adminSettings.statusLabelPending || 'Pending',
                 approved: adminSettings.statusLabelApproved || 'Approved',

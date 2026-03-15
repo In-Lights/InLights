@@ -177,6 +177,11 @@ export interface AdminSettings {
 
   // AI — Spotify Pitch Generator
   geminiApiKey: string; // Paste your Gemini API key (stored in DB, owner-only) — stored in DB, owner-only
+
+  // Streaming Metrics (admin-only panel)
+  spotifyClientId: string;     // Spotify Web API client ID (Dashboard → Create App)
+  spotifyClientSecret: string; // Spotify Web API client secret — stored encrypted in DB
+  youtubeApiKey: string;       // YouTube Data API v3 key (Google Cloud Console)
 }
 
 export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
@@ -239,6 +244,9 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSettings = {
   labelWebsite: '',
   noteTemplates: 'Cover art too small — must be 3000×3000px minimum\nMissing ISRC codes — please provide before approval\nRelease date too soon — minimum 7 days notice required\nWAV files not received — please upload to Drive\nMissing producer credits — required for all tracks\nExplicit content not flagged correctly\nDuplicate submission — please check your previous submission\nArtist profile links missing — add Spotify and Apple Music URLs',
   geminiApiKey: '',
+  spotifyClientId: '',
+  spotifyClientSecret: '',
+  youtubeApiKey: '',
 };
 
 export const RELEASE_TYPE_LIMITS: Record<ReleaseType, { min: number; max: number; label: string }> = {

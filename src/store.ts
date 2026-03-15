@@ -131,6 +131,9 @@ export async function getAdminSettings(): Promise<AdminSettings> {
     emailNotifyArtistOnStatus: data.email_notify_artist_on_status ?? false,
     noteTemplates: data.note_templates ?? DEFAULT_ADMIN_SETTINGS.noteTemplates,
     geminiApiKey: data.gemini_api_key ?? '',
+    spotifyClientId: data.spotify_client_id ?? '',
+    spotifyClientSecret: data.spotify_client_secret ?? '',
+    youtubeApiKey: data.youtube_api_key ?? '',
   };
 }
 
@@ -212,6 +215,9 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
     note_templates: settings.noteTemplates || null,
     gemini_api_key: settings.geminiApiKey || null,
     show_artist_email: settings.showArtistEmail ?? true,
+    spotify_client_id: settings.spotifyClientId || null,
+    spotify_client_secret: settings.spotifyClientSecret || null,
+    youtube_api_key: settings.youtubeApiKey || null,
   }).eq('settings_id', 1).then(() => {}); // intentionally silent
 }
 

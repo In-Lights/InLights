@@ -1430,6 +1430,85 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS email_notify_artist_on_status BOOL
               </div>
             </div>
           </Section>
+
+          {/* Streaming Metrics */}
+          <Section title="Streaming Metrics" desc="Show Spotify popularity, YouTube views, and Apple Music links on each release">
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 mb-4 text-xs text-amber-300 space-y-1">
+              <p className="font-bold">⚠ Required SQL — run once in Supabase SQL Editor</p>
+              <code className="block bg-black/40 text-amber-200 font-mono px-3 py-2 rounded-lg mt-1 select-all whitespace-pre">{`ALTER TABLE settings ADD COLUMN IF NOT EXISTS spotify_client_id TEXT;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS spotify_client_secret TEXT;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS youtube_api_key TEXT;`}</code>
+            </div>
+
+            <div className="space-y-4">
+              {/* Spotify */}
+              <div className="rounded-xl border border-emerald-500/15 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="#1DB954"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+                  <span className="text-sm font-bold text-zinc-300">Spotify Web API</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-auto ${settings.spotifyClientId && settings.spotifyClientSecret ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-500'}`}>
+                    {settings.spotifyClientId && settings.spotifyClientSecret ? '✓ Configured' : 'Not configured'}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Go to <a href="https://developer.spotify.com/dashboard" target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">developer.spotify.com/dashboard</a> → Create app → copy Client ID and Secret.
+                  Returns: <strong className="text-zinc-300">popularity score (0–100)</strong> and track match via ISRC. Stream counts are not publicly available.
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] text-zinc-500 mb-1">Client ID</label>
+                    <input type="text" value={settings.spotifyClientId ?? ''}
+                      onChange={e => setSettings(p => ({ ...p, spotifyClientId: e.target.value }))}
+                      placeholder="32-char hex string"
+                      className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-zinc-500 mb-1">Client Secret</label>
+                    <input type="password" value={settings.spotifyClientSecret ?? ''}
+                      onChange={e => setSettings(p => ({ ...p, spotifyClientSecret: e.target.value }))}
+                      placeholder="32-char hex string"
+                      className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono" />
+                  </div>
+                </div>
+              </div>
+
+              {/* YouTube */}
+              <div className="rounded-xl border border-red-500/15 p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="#FF0000"><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+                  <span className="text-sm font-bold text-zinc-300">YouTube Data API v3</span>
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-auto ${settings.youtubeApiKey ? 'bg-emerald-500/15 text-emerald-400' : 'bg-zinc-800 text-zinc-500'}`}>
+                    {settings.youtubeApiKey ? '✓ Configured' : 'Not configured'}
+                  </span>
+                </div>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Go to <a href="https://console.cloud.google.com" target="_blank" rel="noreferrer" className="text-violet-400 hover:underline">Google Cloud Console</a> → Enable YouTube Data API v3 → Create API key.
+                  Returns: <strong className="text-zinc-300">real view counts and likes</strong>. Free quota: 10,000 units/day.
+                  Also covers YouTube Music (no separate API exists).
+                </p>
+                <div>
+                  <label className="block text-[11px] text-zinc-500 mb-1">API Key</label>
+                  <input type="password" value={settings.youtubeApiKey ?? ''}
+                    onChange={e => setSettings(p => ({ ...p, youtubeApiKey: e.target.value }))}
+                    placeholder="AIza..."
+                    className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono" />
+                </div>
+              </div>
+
+              {/* Apple Music note */}
+              <div className="rounded-xl border border-pink-500/15 p-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="#fc3c44"><path d="M23.994 6.124a9.23 9.23 0 0 0-.24-2.19c-.317-1.31-1.062-2.31-2.18-3.043a5.022 5.022 0 0 0-1.877-.726 10.496 10.496 0 0 0-1.564-.15c-.04-.003-.083-.01-.124-.013H5.986c-.152.01-.303.017-.455.026C4.786.07 4.043.15 3.34.428 2.004.958 1.04 1.88.475 3.208A9.394 9.394 0 0 0 .02 5.81a.09.09 0 0 1-.013.028v12.196c.01.258.032.516.06.774.144 1.3.666 2.416 1.598 3.324.915.892 2.03 1.367 3.29 1.456.39.028.78.028 1.17.028h12.122c.445 0 .89-.012 1.334-.066 1.18-.14 2.21-.64 3.016-1.51a5.27 5.27 0 0 0 1.35-2.694c.107-.55.14-1.11.14-1.67V6.12zM12 18.464a6.502 6.502 0 0 1-6.502-6.502A6.502 6.502 0 0 1 12 5.46a6.502 6.502 0 0 1 6.502 6.502A6.502 6.502 0 0 1 12 18.464zm0-10.54a4.038 4.038 0 1 0 0 8.076 4.038 4.038 0 0 0 0-8.076zm6.78-3.37a1.556 1.556 0 1 1 0 3.112 1.556 1.556 0 0 1 0-3.113z"/></svg>
+                  <span className="text-sm font-bold text-zinc-300">Apple Music</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium ml-auto bg-emerald-500/15 text-emerald-400">Auto — no key needed</span>
+                </div>
+                <p className="text-xs text-zinc-500 leading-relaxed">
+                  Uses the free iTunes Search API — no credentials required. Shows track link and artwork.
+                  Play counts are <strong className="text-zinc-400">not publicly available</strong> from Apple.
+                </p>
+              </div>
+            </div>
+          </Section>
         </div>
       )}
 

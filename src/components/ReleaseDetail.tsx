@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, ExternalLink, Music, Save, Pencil, X, Plus, Trash2, Check, Loader2, ZoomIn, Flag, CheckSquare, Square, ShieldOff, MessageSquare, ChevronDown, Calendar } from 'lucide-react';
-import { ReleaseSubmission, ReleaseStatus, ReleaseType, Track, Collaborator, RELEASE_TYPE_LIMITS, GENRES, ReleasePriority, ChecklistItem } from '../types';
+import { ReleaseSubmission, ReleaseStatus, ReleaseType, Track, Collaborator, RELEASE_TYPE_LIMITS, GENRES, ReleasePriority, ChecklistItem, AdminSettings } from '../types';
 import { updateSubmission } from '../store';
 import { StatusBadge, ReleaseTypeBadge } from './ui/Badge';
 import Lightbox from './Lightbox';
@@ -8,6 +8,7 @@ import AudioPlayer from './AudioPlayer';
 import { usePermissions } from '../utils/permissions';
 import InternalComments from './InternalComments';
 import SpotifyPitchGenerator from './SpotifyPitchGenerator';
+import TrackMetrics from './TrackMetrics';
 
 function fmtDate(s: string): string {
   if (!s) return '';
@@ -24,6 +25,7 @@ interface Props {
   release: ReleaseSubmission;
   onBack: () => void;
   commentsEnabled?: boolean;
+  adminSettings?: AdminSettings;
   statusLabels?: { pending: string; approved: string; scheduled: string; released: string; rejected: string };
   noteTemplates?: string;
 }
@@ -98,7 +100,7 @@ function CommentsPopover({ releaseId }: { releaseId: string }) {
   );
 }
 
-export default function ReleaseDetail({ release: initialRelease, onBack, commentsEnabled = true, statusLabels, noteTemplates = '' }: Props) {
+export default function ReleaseDetail({ release: initialRelease, onBack, commentsEnabled = true, adminSettings, statusLabels, noteTemplates = '' }: Props) {
   const SL = statusLabels ?? { pending: 'Pending', approved: 'Approved', scheduled: 'Scheduled', released: 'Released', rejected: 'Rejected' };
   const { role, can } = usePermissions();
   const [editing, setEditing] = useState(false);
@@ -676,6 +678,10 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
           <AudioPlayer tracks={tracks} releaseTitle={formatDisplayTitle(releaseTitle, releaseType, tracks, features)} />
           {/* Spotify Pitch Generator */}
           <SpotifyPitchGenerator release={initialRelease} />
+          {/* Streaming Metrics */}
+          {adminSettings && (
+            <TrackMetrics release={initialRelease} settings={adminSettings} />
+          )}
           <div className="glass-card rounded-2xl p-6">
             <h3 className="font-bold mb-4">Admin Controls</h3>
             <div className="space-y-4">
