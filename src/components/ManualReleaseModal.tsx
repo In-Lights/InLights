@@ -291,7 +291,15 @@ export default function ManualReleaseModal({ onClose, onSaved, existing, adminSe
               mainArtist={mainArtist}
               releaseTitle={releaseTitle}
               settings={adminSettings}
+              currentRelease={{ releaseDate, genre, explicitContent, features, collaborations }}
               onApply={(updatedTracks) => setTracks(updatedTracks)}
+              onApplyRelease={(patch) => {
+                if (patch.releaseDate)      setReleaseDate(patch.releaseDate);
+                if (patch.genre)            setGenre(patch.genre);
+                if (patch.explicitContent !== undefined) setExplicitContent(patch.explicitContent);
+                if (patch.coverArtImageUrl) setCoverArtDriveLink(patch.coverArtImageUrl);
+                if (patch.features?.length) setFeatures(patch.features);
+              }}
             />
           )}
 

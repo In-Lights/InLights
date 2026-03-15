@@ -56,8 +56,11 @@ export interface SpotifyTrack {
   album: { name: string; release_date: string; images: { url: string }[] };
   popularity: number;
   external_urls: { spotify: string };
+  external_ids?: { isrc?: string };
   duration_ms: number;
   preview_url: string | null;
+  explicit: boolean;
+  track_number: number;
 }
 
 interface YouTubeResult {

@@ -117,6 +117,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
   const [genre, setGenre] = useState(initialRelease.genre);
   const [explicitContent, setExplicitContent] = useState(initialRelease.explicitContent);
   const [coverArtDriveLink, setCoverArtDriveLink] = useState(initialRelease.coverArtDriveLink);
+  const [coverArtImageUrl, setCoverArtImageUrl] = useState(initialRelease.coverArtImageUrl || '');
   const [promoDriveLink, setPromoDriveLink] = useState(initialRelease.promoDriveLink || '');
   const [driveFolderLink, setDriveFolderLink] = useState(initialRelease.driveFolderLink || '');
   const [collaborations, setCollaborations] = useState<Collaborator[]>([...initialRelease.collaborations]);
@@ -157,7 +158,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
         genre,
         explicitContent,
         coverArtDriveLink,
-        coverArtImageUrl: '',
+        coverArtImageUrl: coverArtImageUrl || '',
         promoDriveLink: promoDriveLink || undefined,
         driveFolderLink: driveFolderLink || undefined,
         collaborations: collaborations.filter(c => c.name.trim()),
@@ -187,6 +188,7 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
     setGenre(initialRelease.genre);
     setExplicitContent(initialRelease.explicitContent);
     setCoverArtDriveLink(initialRelease.coverArtDriveLink);
+    setCoverArtImageUrl(initialRelease.coverArtImageUrl || '');
     setPromoDriveLink(initialRelease.promoDriveLink || '');
     setDriveFolderLink(initialRelease.driveFolderLink || '');
     setCollaborations([...initialRelease.collaborations]);
@@ -261,11 +263,11 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
           {/* Artwork — clickable for lightbox */}
           <div
             className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/10 relative group cursor-pointer"
-            onClick={() => { if (artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)) setLightboxOpen(true); }}
+            onClick={() => { if (artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink)) setLightboxOpen(true); }}
           >
-            {artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink) ? (
+            {artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink) ? (
               <>
-                <img src={artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)!} alt="Cover art"
+                <img src={artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink)!} alt="Cover art"
                   className="w-full h-full object-cover transition-transform group-hover:scale-105"
                   onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
                 <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -312,9 +314,9 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
       </div>
 
       {/* Lightbox */}
-      {lightboxOpen && artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink) && (
+      {lightboxOpen && artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink) && (
         <Lightbox
-          src={artworkSrc(initialRelease.coverArtImageUrl, coverArtDriveLink)!}
+          src={artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink)!}
           alt={`${formatDisplayTitle(releaseTitle, releaseType, tracks, features)} — Cover Art`}
           driveLink={coverArtDriveLink}
           onClose={() => setLightboxOpen(false)}
@@ -686,7 +688,25 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
               mainArtist={mainArtist}
               releaseTitle={releaseTitle}
               settings={adminSettings}
+              releaseId={initialRelease.id}
+              currentRelease={{
+                releaseDate,
+                genre,
+                coverArtImageUrl: initialRelease.coverArtImageUrl,
+                coverArtDriveLink,
+                explicitContent,
+                upc: upc || undefined,
+                features,
+                collaborations,
+              }}
               onApply={(updatedTracks) => setTracks(updatedTracks)}
+              onApplyRelease={(patch) => {
+                if (patch.releaseDate)      setReleaseDate(patch.releaseDate);
+                if (patch.genre)            setGenre(patch.genre);
+                if (patch.explicitContent !== undefined) setExplicitContent(patch.explicitContent);
+                if (patch.features?.length) setFeatures(patch.features);
+                if (patch.coverArtImageUrl) setCoverArtImageUrl(patch.coverArtImageUrl);
+              }}
             />
           )}
           {/* Streaming Metrics */}
