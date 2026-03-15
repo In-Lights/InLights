@@ -701,11 +701,12 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
               }}
               onApply={(updatedTracks) => setTracks(updatedTracks)}
               onApplyRelease={(patch) => {
-                if (patch.releaseDate)      setReleaseDate(patch.releaseDate);
-                if (patch.genre)            setGenre(patch.genre);
-                if (patch.explicitContent !== undefined) setExplicitContent(patch.explicitContent);
-                if (patch.features?.length) setFeatures(patch.features);
-                if (patch.coverArtImageUrl) setCoverArtImageUrl(patch.coverArtImageUrl);
+                if (patch.releaseDate)                        setReleaseDate(patch.releaseDate);
+                if (patch.genre)                              setGenre(patch.genre);
+                if (patch.explicitContent !== undefined)      setExplicitContent(patch.explicitContent);
+                if (patch.coverArtImageUrl)                   setCoverArtImageUrl(patch.coverArtImageUrl);
+                if (patch.features?.length)                   setFeatures(patch.features);
+                if (patch.collaborations?.length)             setCollaborations(patch.collaborations);
               }}
             />
           )}
