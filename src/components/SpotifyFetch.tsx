@@ -59,11 +59,14 @@ function parseCreditsFromText(text: string): Partial<MBCredits> {
         const idx = line.indexOf(key);
         if (idx !== -1) {
           const raw = line.slice(idx + key.length).replace(/^[\s:–\-]+/, '').trim();
-          if (raw.length > 1 && raw.length < 80) {
-            // Capitalize each word
-            const name = raw.split(',')[0].split('&')[0].trim()
-              .replace(/\b\w/g, c => c.toUpperCase());
-            if (name) {
+          if (raw.length > 1 && raw.length < 120) {
+            // Split on common multi-name separators to get ALL names
+            const names = raw
+              .split(/,|\s&\s|\sand\s|\s\+\s|feat\.|ft\./)
+              .map(n => n.trim().replace(/^[\s:]+|[\s.]+$/g, ''))
+              .filter(n => n.length > 1 && n.length < 60)
+              .map(n => n.replace(/\b\w/g, c => c.toUpperCase()));
+            for (const name of names) {
               if (!result[field]) result[field] = [];
               if (!result[field]!.includes(name)) result[field]!.push(name);
             }
@@ -214,6 +217,7 @@ interface FetchedTrack {
   mbCredits: Partial<MBCredits>;
   mergedCredits: Partial<MBCredits>;
   resolvedIsrc?: string;
+  featuredArtists?: string[];
 }
 
 interface Props {
@@ -253,6 +257,7 @@ export default function SpotifyFetch({ tracks, mainArtist, releaseTitle, setting
           youtube: null,
           mbCredits: {},
           mergedCredits: {},
+          featuredArtists: [],
         };
 
         setFetchStatus(`Fetching track ${i + 1}/${tracks.length}…`);
@@ -265,9 +270,12 @@ export default function SpotifyFetch({ tracks, mainArtist, releaseTitle, setting
               settings.spotifyClientSecret,
               track.isrc, title, mainArtist
             );
-            // Extract ISRC from Spotify response (external_ids field)
             const sp = result.spotify as SpotifyTrack & { external_ids?: { isrc?: string } };
             result.resolvedIsrc = track.isrc || sp?.external_ids?.isrc;
+            // Extract featured artists (all artists beyond the first = features)
+            if (sp?.artists && sp.artists.length > 1) {
+              result.featuredArtists = sp.artists.slice(1).map(a => a.name);
+            }
           } catch (e) {
             result.spotifyError = e instanceof Error ? e.message : 'Spotify fetch failed';
           }
@@ -323,20 +331,24 @@ export default function SpotifyFetch({ tracks, mainArtist, releaseTitle, setting
         }
       }
 
-      // Credits — only fill if field is currently empty
+      // Credits — merge fetched names with existing, dedup, preserve order
       const c = r.mergedCredits;
-      if (c.producedBy?.length && !track.producedBy?.trim()) {
-        patch.producedBy = c.producedBy.join('|');
-      }
-      if (c.mixedBy?.length && !track.mixedBy?.trim()) {
-        patch.mixedBy = c.mixedBy.join('|');
-      }
-      if (c.masteredBy?.length && !track.masteredBy?.trim()) {
-        patch.masteredBy = c.masteredBy.join('|');
-      }
-      if (c.lyricsBy?.length && !track.lyricsBy?.trim()) {
-        patch.lyricsBy = c.lyricsBy.join('|');
-      }
+      const mergeField = (existing: string, fetched?: string[]) => {
+        if (!fetched?.length) return existing;
+        const existingList = existing ? existing.split('|').map(s => s.trim()).filter(Boolean) : [];
+        const merged = [...existingList];
+        for (const name of fetched) {
+          const norm = name.trim();
+          if (norm && !merged.some(e => e.toLowerCase() === norm.toLowerCase())) {
+            merged.push(norm);
+          }
+        }
+        return merged.join('|');
+      };
+      if (c.producedBy?.length) patch.producedBy = mergeField(track.producedBy || '', c.producedBy);
+      if (c.mixedBy?.length)    patch.mixedBy    = mergeField(track.mixedBy    || '', c.mixedBy);
+      if (c.masteredBy?.length) patch.masteredBy = mergeField(track.masteredBy || '', c.masteredBy);
+      if (c.lyricsBy?.length)   patch.lyricsBy   = mergeField(track.lyricsBy   || '', c.lyricsBy);
 
       return { ...track, ...patch };
     });
@@ -346,16 +358,6 @@ export default function SpotifyFetch({ tracks, mainArtist, releaseTitle, setting
 
   const anyPreview = results.some(r => r.spotify?.preview_url);
   const anyCredits = results.some(r => Object.values(r.mergedCredits).some(v => v?.length));
-
-  const CreditRow = ({ label, values }: { label: string; values?: string[] }) => {
-    if (!values?.length) return null;
-    return (
-      <div className="flex items-baseline gap-2 text-[11px]">
-        <span className="text-zinc-600 w-20 flex-shrink-0">{label}</span>
-        <span className="text-zinc-300 font-medium">{values.join(', ')}</span>
-      </div>
-    );
-  };
 
   return (
     <div className="rounded-xl border border-violet-500/20 overflow-hidden">
@@ -418,32 +420,63 @@ export default function SpotifyFetch({ tracks, mainArtist, releaseTitle, setting
                 {hasSpotify && (
                   <div className="space-y-1">
                     {r.spotifyError ? (
-                      <div className="flex items-center gap-1.5 text-[11px] text-amber-400">
-                        <AlertTriangle className="w-3 h-3" /> {r.spotifyError}
+                      <div className="flex items-center gap-1.5 text-[11px] text-amber-400/90 bg-amber-500/8 px-2.5 py-2 rounded-lg">
+                        <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                        <span>{r.spotifyError.includes('JSON') || r.spotifyError.includes('token')
+                          ? 'Auth failed — check Client ID & Secret in Settings → AI & Integrations'
+                          : r.spotifyError}</span>
                       </div>
                     ) : r.spotify ? (
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
+                        {/* Track match */}
                         <div className="flex items-center gap-2">
                           <svg className="w-3 h-3 flex-shrink-0" viewBox="0 0 24 24" fill="#1DB954">
                             <path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/>
                           </svg>
-                          <span className="text-xs font-medium text-zinc-300 truncate flex-1">
-                            {r.spotify.name} · <span className="text-zinc-500">{r.spotify.artists.map(a => a.name).join(', ')}</span>
-                          </span>
+                          <span className="text-xs font-medium text-zinc-300 flex-1 truncate">{r.spotify.name}</span>
                           <a href={r.spotify.external_urls.spotify} target="_blank" rel="noreferrer"
                             className="text-zinc-600 hover:text-emerald-400 flex-shrink-0 transition-colors">
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         </div>
-                        <div className="flex items-center gap-3 text-[10px]">
-                          <span className="text-zinc-600">Pop: <span className="text-zinc-400">{r.spotify.popularity}/100</span></span>
-                          <span className="text-zinc-600">Album: <span className="text-zinc-400 truncate max-w-[120px] inline-block align-bottom">{r.spotify.album.name}</span></span>
+
+                        {/* All artists */}
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] pl-0">
+                          <div>
+                            <span className="text-zinc-600">Main artist</span>
+                            <p className="text-zinc-300 font-medium">{r.spotify.artists[0]?.name}</p>
+                          </div>
+                          {r.featuredArtists && r.featuredArtists.length > 0 && (
+                            <div>
+                              <span className="text-zinc-600">
+                                {r.featuredArtists.length > 1 ? `Features (${r.featuredArtists.length})` : 'Feature'}
+                              </span>
+                              <p className="text-violet-300 font-medium">{r.featuredArtists.join(', ')}</p>
+                            </div>
+                          )}
+                          <div>
+                            <span className="text-zinc-600">Album</span>
+                            <p className="text-zinc-400 truncate">{r.spotify.album.name}</p>
+                          </div>
+                          <div>
+                            <span className="text-zinc-600">Popularity</span>
+                            <div className="flex items-center gap-1.5 mt-0.5">
+                              <div className="flex-1 h-1 bg-zinc-800 rounded-full max-w-[50px]">
+                                <div className="h-1 bg-emerald-500 rounded-full" style={{ width: `${r.spotify.popularity}%` }} />
+                              </div>
+                              <span className="text-zinc-400">{r.spotify.popularity}/100</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Preview status */}
+                        <div className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-lg ${r.spotify.preview_url ? 'bg-emerald-500/8 text-emerald-400' : 'bg-zinc-800/60 text-zinc-600'}`}>
                           {r.spotify.preview_url
-                            ? <span className="text-emerald-400 flex items-center gap-1 font-medium"><CheckCircle2 className="w-3 h-3" />30s preview</span>
-                            : <span className="text-zinc-700">No preview (Spotify disabled)</span>}
+                            ? <><CheckCircle2 className="w-3 h-3 flex-shrink-0" /> 30s preview available — player will use Spotify</>
+                            : <><AlertTriangle className="w-3 h-3 flex-shrink-0" /> No preview (Spotify has disabled preview_url for most tracks since 2023)</>}
                         </div>
                       </div>
-                    ) : <p className="text-[11px] text-zinc-600">Not found on Spotify</p>}
+                    ) : <p className="text-[11px] text-zinc-600 italic">Not found on Spotify</p>}
                   </div>
                 )}
 
@@ -463,18 +496,34 @@ export default function SpotifyFetch({ tracks, mainArtist, releaseTitle, setting
 
                 {/* Credits section */}
                 {(Object.values(r.mergedCredits).some(v => v?.length)) ? (
-                  <div className="rounded-lg bg-white/[0.03] border border-white/5 p-2.5 space-y-1.5">
-                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">
+                  <div className="rounded-lg bg-white/[0.03] border border-white/5 p-2.5 space-y-2">
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
                       Credits found
                       <span className="ml-1.5 text-zinc-700 font-normal normal-case">
-                        (MusicBrainz{r.youtube?.credits && Object.values(r.youtube.credits).some(v => v?.length) ? ' + YouTube' : ''})
+                        (MusicBrainz{r.youtube?.credits && Object.values(r.youtube.credits).some(v => v?.length) ? ' + YouTube desc' : ''})
                       </span>
                     </p>
-                    <CreditRow label="Produced by" values={r.mergedCredits.producedBy} />
-                    <CreditRow label="Mixed by" values={r.mergedCredits.mixedBy} />
-                    <CreditRow label="Mastered by" values={r.mergedCredits.masteredBy} />
-                    <CreditRow label="Lyrics by" values={r.mergedCredits.lyricsBy} />
-                    <CreditRow label="Arranged by" values={r.mergedCredits.arrangedBy} />
+                    {([
+                      ['Produced by',  r.mergedCredits.producedBy],
+                      ['Mixed by',     r.mergedCredits.mixedBy],
+                      ['Mastered by',  r.mergedCredits.masteredBy],
+                      ['Lyrics by',    r.mergedCredits.lyricsBy],
+                      ['Arranged by',  r.mergedCredits.arrangedBy],
+                    ] as [string, string[] | undefined][]).filter(([, v]) => v?.length).map(([label, values]) => (
+                      <div key={label} className="flex items-start gap-2">
+                        <span className="text-[11px] text-zinc-600 w-20 flex-shrink-0 pt-0.5">{label}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {values!.map((name, ni) => (
+                            <span key={ni} className="text-[11px] bg-white/5 border border-white/8 text-zinc-300 px-2 py-0.5 rounded-full font-medium">
+                              {name}
+                            </span>
+                          ))}
+                          {values!.length > 1 && (
+                            <span className="text-[10px] text-zinc-700 self-center">({values!.length})</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : (
                   <div className="text-[11px] text-zinc-700 italic">

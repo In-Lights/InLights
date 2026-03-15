@@ -106,10 +106,19 @@ async function getSpotifyToken(clientId: string, clientSecret: string): Promise<
     },
     body: 'grant_type=client_credentials',
   });
-  if (!res.ok) throw new Error(`Spotify auth failed: ${res.status}`);
-  const d = await res.json();
-  _spotifyToken = d.access_token;
-  _spotifyTokenExp = Date.now() + d.expires_in * 1000;
+  const text = await res.text();
+  let d: Record<string, unknown>;
+  try {
+    d = JSON.parse(text);
+  } catch {
+    throw new Error(`Spotify auth failed (${res.status}) — check your Client ID and Secret in Settings → AI & Integrations`);
+  }
+  if (!res.ok || d.error) {
+    const msg = (d.error_description as string) || (d.error as string) || `HTTP ${res.status}`;
+    throw new Error(`Spotify: ${msg}`);
+  }
+  _spotifyToken = d.access_token as string;
+  _spotifyTokenExp = Date.now() + (d.expires_in as number) * 1000;
   return _spotifyToken!;
 }
 
