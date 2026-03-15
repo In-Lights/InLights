@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown, ShieldOff, Bell } from 'lucide-react';
+import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown, ShieldOff, Bell, Plus } from 'lucide-react';
 import { ReleaseSubmission, ReleaseStatus } from '../types';
 import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV, getPendingReminders, getUpcomingReleaseReminders } from '../store';
 import { ReleaseTypeBadge } from './ui/Badge';
 import ExportPDFButton from './ExportPDF';
 import { usePermissions } from '../utils/permissions';
+import ManualReleaseModal from './ManualReleaseModal';
 
 interface Props {
   onViewRelease: (release: ReleaseSubmission) => void;
@@ -62,6 +63,7 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
   const [pendingReminders, setPendingReminders] = useState<ReleaseSubmission[]>([]);
   const [dismissedReminders, setDismissedReminders] = useState(false);
   const [upcomingReminders, setUpcomingReminders] = useState<ReleaseSubmission[]>([]);
+  const [showAddModal, setShowAddModal] = useState(false);
   const [dismissedUpcoming, setDismissedUpcoming] = useState(false);
 
   const toggleSelect = (id: string) => setSelected(prev => {
@@ -272,6 +274,16 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
             <span className="hidden sm:inline">CSV</span>
           </button>
           {can.canExport && <ExportPDFButton releases={filtered} />}
+          {can.canEditRelease && (
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="flex items-center gap-1.5 px-3 py-2.5 rounded-xl btn-primary text-sm font-semibold"
+              title="Add release manually"
+            >
+              <Plus className="w-4 h-4" />
+              <span className="hidden sm:inline">Add Release</span>
+            </button>
+          )}
           <button
             onClick={onRefresh}
             className="p-2.5 rounded-xl border border-zinc-800 text-zinc-400 hover:text-white transition-all"
@@ -412,6 +424,14 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
             </div>
           ))}
         </div>
+      )}
+
+      {/* Add Release Modal */}
+      {showAddModal && (
+        <ManualReleaseModal
+          onClose={() => setShowAddModal(false)}
+          onSaved={() => { setShowAddModal(false); onRefresh(); }}
+        />
       )}
     </div>
   );
