@@ -355,6 +355,66 @@ function SheetsTab({ settings, setSettings }: { settings: AdminSettingsType; set
   );
 }
 
+function SpotifyTestButton({ clientId, clientSecret }: { clientId: string; clientSecret: string }) {
+  const [status, setStatus] = useState<'idle' | 'testing' | 'ok' | 'error'>('idle');
+  const [msg, setMsg] = useState('');
+
+  const test = async () => {
+    setStatus('testing'); setMsg('');
+    try {
+      const id = clientId.trim();
+      const secret = clientSecret.trim();
+      const res = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Authorization: 'Basic ' + btoa(`${id}:${secret}`),
+        },
+        body: 'grant_type=client_credentials',
+      });
+      const text = await res.text();
+      let d: Record<string, unknown> = {};
+      try { d = JSON.parse(text); } catch { /* html response */ }
+
+      if (res.ok && d.access_token) {
+        setStatus('ok');
+        setMsg(`✓ Connected — token expires in ${d.expires_in}s`);
+      } else {
+        const err = (d.error_description as string) || (d.error as string) || `HTTP ${res.status}`;
+        if (res.status === 401 || d.error === 'invalid_client') {
+          setStatus('error');
+          setMsg(`Invalid credentials — double-check Client ID and Secret. Both should be 32-char hex strings with no spaces.`);
+        } else {
+          setStatus('error');
+          setMsg(`Failed: ${err}`);
+        }
+      }
+    } catch (e) {
+      setStatus('error');
+      setMsg(`Network error: ${e instanceof Error ? e.message : 'Check console for details'}`);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <button
+        onClick={test}
+        disabled={status === 'testing'}
+        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 text-xs text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-50"
+      >
+        {status === 'testing'
+          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Testing…</>
+          : <>🔍 Test Spotify Connection</>}
+      </button>
+      {msg && (
+        <p className={`text-xs px-3 py-2 rounded-lg ${status === 'ok' ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'}`}>
+          {msg}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function AdminSettingsPanel({ onSaved }: Props) {
   const [settings, setSettings] = useState<AdminSettingsType>({ ...DEFAULT_ADMIN_SETTINGS });
   const [loading, setLoading] = useState(true);
@@ -1458,17 +1518,40 @@ ALTER TABLE settings ADD COLUMN IF NOT EXISTS youtube_api_key TEXT;`}</code>
                   <div>
                     <label className="block text-[11px] text-zinc-500 mb-1">Client ID</label>
                     <input type="text" value={settings.spotifyClientId ?? ''}
-                      onChange={e => setSettings(p => ({ ...p, spotifyClientId: e.target.value }))}
+                      onChange={e => setSettings(p => ({ ...p, spotifyClientId: e.target.value.trim() }))}
                       placeholder="32-char hex string"
                       className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono" />
                   </div>
                   <div>
                     <label className="block text-[11px] text-zinc-500 mb-1">Client Secret</label>
                     <input type="password" value={settings.spotifyClientSecret ?? ''}
-                      onChange={e => setSettings(p => ({ ...p, spotifyClientSecret: e.target.value }))}
+                      onChange={e => setSettings(p => ({ ...p, spotifyClientSecret: e.target.value.trim() }))}
                       placeholder="32-char hex string"
                       className="input-dark w-full px-3 py-2 rounded-lg text-sm font-mono" />
                   </div>
+                </div>
+
+                {/* Test button */}
+                {settings.spotifyClientId && settings.spotifyClientSecret && (
+                  <SpotifyTestButton clientId={settings.spotifyClientId} clientSecret={settings.spotifyClientSecret} />
+                )}
+
+                {/* Setup checklist */}
+                <div className="rounded-lg bg-zinc-900/60 border border-white/5 p-3 space-y-1.5">
+                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mb-2">Setup checklist</p>
+                  {[
+                    'Go to developer.spotify.com/dashboard → Log in',
+                    'Click "Create app" → any name/description',
+                    'Set Redirect URI to: http://localhost (required even though we don\'t use OAuth)',
+                    'Check "Web API" under APIs used → Save',
+                    'Go to Settings → copy Client ID and Client Secret',
+                    'Paste both here and Save',
+                  ].map((step, i) => (
+                    <div key={i} className="flex items-start gap-2 text-[11px] text-zinc-500">
+                      <span className="text-zinc-700 flex-shrink-0 font-mono">{i + 1}.</span>
+                      <span>{step}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
 

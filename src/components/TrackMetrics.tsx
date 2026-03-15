@@ -100,26 +100,46 @@ let _spotifyToken: string | null = null;
 let _spotifyTokenExp = 0;
 
 async function getSpotifyToken(clientId: string, clientSecret: string): Promise<string> {
+  // Trim to avoid invisible whitespace from copy-paste
+  const id = clientId.trim();
+  const secret = clientSecret.trim();
+
   if (_spotifyToken && Date.now() < _spotifyTokenExp - 30_000) return _spotifyToken;
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: 'Basic ' + btoa(`${clientId}:${clientSecret}`),
-    },
-    body: 'grant_type=client_credentials',
-  });
+
+  let res: Response;
+  try {
+    res = await fetch('https://accounts.spotify.com/api/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Authorization: 'Basic ' + btoa(`${id}:${secret}`),
+      },
+      body: 'grant_type=client_credentials',
+    });
+  } catch (e) {
+    // Network error or CORS block
+    throw new Error(`Spotify: Network error — ${e instanceof Error ? e.message : 'CORS or connection refused. Make sure your Spotify app has no Redirect URI restrictions.'}`);
+  }
+
   const text = await res.text();
   let d: Record<string, unknown>;
   try {
     d = JSON.parse(text);
   } catch {
-    throw new Error(`Spotify auth failed (${res.status}) — check your Client ID and Secret in Settings → AI & Integrations`);
+    // Got HTML instead of JSON — likely CORS preflight rejection or wrong URL
+    throw new Error(`Spotify: Unexpected response (${res.status}) — got HTML instead of JSON. This usually means CORS is blocking the request. The Spotify token endpoint (accounts.spotify.com/api/token) should support CORS but some browser extensions or network configs block it.`);
   }
+
   if (!res.ok || d.error) {
-    const msg = (d.error_description as string) || (d.error as string) || `HTTP ${res.status}`;
-    throw new Error(`Spotify: ${msg}`);
+    const desc = (d.error_description as string) || '';
+    const code = (d.error as string) || `HTTP ${res.status}`;
+    // Give specific fix for the most common errors
+    if (code === 'invalid_client' || res.status === 401) {
+      throw new Error(`Spotify: Invalid Client ID or Secret. Double-check both values in Settings → AI & Integrations. Make sure you copied the full 32-char strings with no spaces.`);
+    }
+    throw new Error(`Spotify: ${code}${desc ? ` — ${desc}` : ''}`);
   }
+
   _spotifyToken = d.access_token as string;
   _spotifyTokenExp = Date.now() + (d.expires_in as number) * 1000;
   return _spotifyToken!;
