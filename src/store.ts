@@ -187,20 +187,10 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
       label_email: settings.labelEmail || null,
       label_instagram: settings.labelInstagram || null,
       label_website: settings.labelWebsite || null,
-      gmail_webhook_url: settings.gmailWebhookUrl || null,
-      email_from_name: settings.emailFromName || null,
-      email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
-      email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
     })
     .eq('settings_id', 1);
 
-  if (error) {
-    // If error mentions gmail_webhook_url column missing, throw a helpful message
-    if (error.message?.includes('gmail_webhook_url') || error.message?.includes('email_from_name') || error.message?.includes('email_notify')) {
-      throw new Error('Missing DB columns. Run this in Supabase SQL Editor:\nALTER TABLE settings ADD COLUMN IF NOT EXISTS gmail_webhook_url TEXT;\nALTER TABLE settings ADD COLUMN IF NOT EXISTS email_from_name TEXT;\nALTER TABLE settings ADD COLUMN IF NOT EXISTS email_notify_on_submission BOOLEAN DEFAULT false;\nALTER TABLE settings ADD COLUMN IF NOT EXISTS email_notify_artist_on_status BOOLEAN DEFAULT false;');
-    }
-    throw new Error(error.message);
-  }
+  if (error) throw new Error(error.message);
 
   // ── EXTENDED: newer columns — saved silently so missing columns never break the core save.
   // Run add_columns.sql in Supabase SQL Editor once to unlock these fully.
@@ -215,10 +205,14 @@ export async function saveAdminSettings(settings: AdminSettings): Promise<void> 
     note_templates: settings.noteTemplates || null,
     gemini_api_key: settings.geminiApiKey || null,
     show_artist_email: settings.showArtistEmail ?? true,
+    gmail_webhook_url: settings.gmailWebhookUrl || null,
+    email_from_name: settings.emailFromName || null,
+    email_notify_on_submission: settings.emailNotifyOnSubmission ?? false,
+    email_notify_artist_on_status: settings.emailNotifyArtistOnStatus ?? false,
     spotify_client_id: settings.spotifyClientId || null,
     spotify_client_secret: settings.spotifyClientSecret || null,
     youtube_api_key: settings.youtubeApiKey || null,
-  }).eq('settings_id', 1).then(() => {}); // intentionally silent
+  }).eq('settings_id', 1).then(() => {}); // intentionally silent — missing columns won't break core save
 }
 
 // Public branding — anyone can read (RLS: public SELECT on settings)
