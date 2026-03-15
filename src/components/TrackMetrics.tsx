@@ -95,47 +95,40 @@ export interface ReleaseMetrics {
   tracks: TrackMetricResult[];
 }
 
-// ── Spotify token cache ──────────────────────────────────────
+// ── Spotify token + search via server-side proxy ─────────────
+// accounts.spotify.com/api/token blocks CORS from browser origins.
+// We route through /api/spotify-token (Vercel serverless function).
 let _spotifyToken: string | null = null;
 let _spotifyTokenExp = 0;
+let _spotifyCredentials: { id: string; secret: string } | null = null;
 
 async function getSpotifyToken(clientId: string, clientSecret: string): Promise<string> {
-  // Trim to avoid invisible whitespace from copy-paste
   const id = clientId.trim();
   const secret = clientSecret.trim();
 
+  // Invalidate cache if credentials changed
+  if (_spotifyCredentials?.id !== id || _spotifyCredentials?.secret !== secret) {
+    _spotifyToken = null;
+    _spotifyTokenExp = 0;
+    _spotifyCredentials = { id, secret };
+  }
+
   if (_spotifyToken && Date.now() < _spotifyTokenExp - 30_000) return _spotifyToken;
 
-  let res: Response;
-  try {
-    res = await fetch('https://accounts.spotify.com/api/token', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Authorization: 'Basic ' + btoa(`${id}:${secret}`),
-      },
-      body: 'grant_type=client_credentials',
-    });
-  } catch (e) {
-    // Network error or CORS block
-    throw new Error(`Spotify: Network error — ${e instanceof Error ? e.message : 'CORS or connection refused. Make sure your Spotify app has no Redirect URI restrictions.'}`);
-  }
+  // Call our server-side proxy — avoids CORS
+  const res = await fetch('/api/spotify-token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientId: id, clientSecret: secret }),
+  });
 
-  const text = await res.text();
-  let d: Record<string, unknown>;
-  try {
-    d = JSON.parse(text);
-  } catch {
-    // Got HTML instead of JSON — likely CORS preflight rejection or wrong URL
-    throw new Error(`Spotify: Unexpected response (${res.status}) — got HTML instead of JSON. This usually means CORS is blocking the request. The Spotify token endpoint (accounts.spotify.com/api/token) should support CORS but some browser extensions or network configs block it.`);
-  }
+  const d = await res.json() as Record<string, unknown>;
 
   if (!res.ok || d.error) {
     const desc = (d.error_description as string) || '';
     const code = (d.error as string) || `HTTP ${res.status}`;
-    // Give specific fix for the most common errors
-    if (code === 'invalid_client' || res.status === 401) {
-      throw new Error(`Spotify: Invalid Client ID or Secret. Double-check both values in Settings → AI & Integrations. Make sure you copied the full 32-char strings with no spaces.`);
+    if (res.status === 401 || d.error === 'invalid_client') {
+      throw new Error('Spotify: Invalid Client ID or Secret — double-check both 32-char values in Settings → AI & Integrations');
     }
     throw new Error(`Spotify: ${code}${desc ? ` — ${desc}` : ''}`);
   }
@@ -145,7 +138,6 @@ async function getSpotifyToken(clientId: string, clientSecret: string): Promise<
   return _spotifyToken!;
 }
 
-// ── Spotify: search by ISRC (exact), fall back to title+artist ──
 async function fetchSpotifyTrack(
   clientId: string,
   clientSecret: string,
@@ -153,37 +145,36 @@ async function fetchSpotifyTrack(
   title: string,
   artist: string
 ): Promise<SpotifyTrack | null> {
-  const token = await getSpotifyToken(clientId, clientSecret);
+  const id = clientId.trim();
+  const secret = clientSecret.trim();
 
-  // 1. Try exact ISRC lookup — most reliable
+  // Helper: search via proxy
+  const search = async (query: string, limit = 5) => {
+    const res = await fetch('/api/spotify-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ clientId: id, clientSecret: secret, query, limit, market: 'US' }),
+    });
+    const d = await res.json() as Record<string, unknown>;
+    return (d?.tracks as { items: SpotifyTrack[] })?.items ?? [];
+  };
+
+  // 1. Exact ISRC lookup
   if (isrc) {
-    const r = await fetch(
-      `https://api.spotify.com/v1/search?q=isrc:${encodeURIComponent(isrc)}&type=track&limit=1`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const d = await r.json();
-    const items: SpotifyTrack[] = d?.tracks?.items ?? [];
+    const items = await search(`isrc:${isrc}`, 1);
     if (items.length) return items[0];
   }
 
-  // 2. Plain text search — more reliable than field filters for non-English titles
-  const q = encodeURIComponent(`${title} ${artist}`);
-  const r2 = await fetch(
-    `https://api.spotify.com/v1/search?q=${q}&type=track&limit=5&market=US`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  const d2 = await r2.json();
-  const items2: SpotifyTrack[] = d2?.tracks?.items ?? [];
+  // 2. Plain text search — works better than field filters for non-English titles
+  const items2 = await search(`${title} ${artist}`, 5);
   if (!items2.length) return null;
 
-  // Best match: exact title + artist overlap
   const titleLower = title.toLowerCase();
   const artistLower = artist.toLowerCase();
   const exact = items2.find(t =>
     t.name.toLowerCase() === titleLower &&
     t.artists.some(a => a.name.toLowerCase().includes(artistLower) || artistLower.includes(a.name.toLowerCase()))
   );
-  // Second best: title match only
   const titleOnly = items2.find(t => t.name.toLowerCase() === titleLower);
   return exact ?? titleOnly ?? items2[0];
 }

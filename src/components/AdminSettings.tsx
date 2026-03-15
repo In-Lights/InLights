@@ -362,49 +362,38 @@ function SpotifyTestButton({ clientId, clientSecret }: { clientId: string; clien
   const test = async () => {
     setStatus('testing'); setMsg('');
     try {
-      const id = clientId.trim();
-      const secret = clientSecret.trim();
-      const res = await fetch('https://accounts.spotify.com/api/token', {
+      // Use the server-side proxy — avoids CORS
+      const res = await fetch('/api/spotify-token', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Authorization: 'Basic ' + btoa(`${id}:${secret}`),
-        },
-        body: 'grant_type=client_credentials',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: clientId.trim(), clientSecret: clientSecret.trim() }),
       });
-      const text = await res.text();
-      let d: Record<string, unknown> = {};
-      try { d = JSON.parse(text); } catch { /* html response */ }
+      const d = await res.json() as Record<string, unknown>;
 
       if (res.ok && d.access_token) {
         setStatus('ok');
-        setMsg(`✓ Connected — token expires in ${d.expires_in}s`);
+        setMsg(`✓ Connected — token valid for ${d.expires_in}s`);
       } else {
         const err = (d.error_description as string) || (d.error as string) || `HTTP ${res.status}`;
         if (res.status === 401 || d.error === 'invalid_client') {
           setStatus('error');
-          setMsg(`Invalid credentials — double-check Client ID and Secret. Both should be 32-char hex strings with no spaces.`);
+          setMsg('Invalid Client ID or Secret — copy the full 32-char hex strings from Spotify Dashboard with no spaces');
         } else {
           setStatus('error');
-          setMsg(`Failed: ${err}`);
+          setMsg(`Spotify error: ${err}`);
         }
       }
     } catch (e) {
       setStatus('error');
-      setMsg(`Network error: ${e instanceof Error ? e.message : 'Check console for details'}`);
+      setMsg(`Request failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     }
   };
 
   return (
     <div className="space-y-2">
-      <button
-        onClick={test}
-        disabled={status === 'testing'}
-        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 text-xs text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-50"
-      >
-        {status === 'testing'
-          ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Testing…</>
-          : <>🔍 Test Spotify Connection</>}
+      <button onClick={test} disabled={status === 'testing'}
+        className="flex items-center gap-2 px-3 py-2 rounded-xl border border-white/10 text-xs text-zinc-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-50">
+        {status === 'testing' ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Testing…</> : <>🔍 Test Spotify Connection</>}
       </button>
       {msg && (
         <p className={`text-xs px-3 py-2 rounded-lg ${status === 'ok' ? 'text-emerald-400 bg-emerald-500/10' : 'text-red-400 bg-red-500/10'}`}>
