@@ -20,14 +20,16 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const { clientId, clientSecret, query, type = 'track', limit = 5, market = 'US' } = req.body || {};
+  const { clientId, clientSecret, query, type = 'track', limit = 5, market = '' } = req.body || {};
   if (!clientId || !clientSecret || !query) {
     return res.status(400).json({ error: 'Missing clientId, clientSecret, or query' });
   }
 
   try {
     const token = await getToken(String(clientId).trim(), String(clientSecret).trim());
-    const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(String(query))}&type=${type}&limit=${limit}&market=${market}`;
+    // Only add market param if explicitly provided — omitting it searches the global catalog
+    const marketParam = market ? `&market=${market}` : '';
+    const url = `https://api.spotify.com/v1/search?q=${encodeURIComponent(String(query))}&type=${type}&limit=${limit}${marketParam}`;
     const searchRes = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
     const data = await searchRes.json();
     return res.status(searchRes.status).json(data);

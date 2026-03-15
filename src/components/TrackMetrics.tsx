@@ -160,35 +160,62 @@ async function fetchSpotifyTrack(
   const id = clientId.trim();
   const secret = clientSecret.trim();
 
-  // Helper: search via proxy
-  const search = async (query: string, limit = 5) => {
+  // Search helper — no market restriction by default so Arabic/regional tracks are found
+  const search = async (query: string, limit = 5, market = '') => {
     const res = await fetch('/api/spotify-search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ clientId: id, clientSecret: secret, query, limit, market: 'US' }),
+      body: JSON.stringify({ clientId: id, clientSecret: secret, query, limit, market }),
     });
-    const d = await res.json() as Record<string, unknown>;
-    return (d?.tracks as { items: SpotifyTrack[] })?.items ?? [];
+    const text = await res.text();
+    try {
+      const d = JSON.parse(text) as Record<string, unknown>;
+      return (d?.tracks as { items: SpotifyTrack[] })?.items ?? [];
+    } catch { return []; }
   };
 
-  // 1. Exact ISRC lookup
+  // 1. Exact ISRC — always most reliable
   if (isrc) {
     const items = await search(`isrc:${isrc}`, 1);
     if (items.length) return items[0];
   }
 
-  // 2. Plain text search — works better than field filters for non-English titles
-  const items2 = await search(`${title} ${artist}`, 5);
-  if (!items2.length) return null;
+  // 2. Global search (no market) — finds Arabic/MENA tracks that US market hides
+  const q = `${title} ${artist}`;
+  let items = await search(q, 5, '');
+
+  // 3. Try MENA markets if no results
+  if (!items.length) items = await search(q, 5, 'SA');
+  if (!items.length) items = await search(q, 5, 'EG');
+  if (!items.length) items = await search(q, 5, 'AE');
+
+  // 4. Artist-only + filter by title as last resort
+  if (!items.length) {
+    const artistItems = await search(artist, 10, '');
+    items = artistItems.filter(t =>
+      t.name.toLowerCase().includes(title.toLowerCase()) ||
+      title.toLowerCase().includes(t.name.toLowerCase())
+    );
+    if (!items.length && artistItems.length) items = artistItems;
+  }
+
+  if (!items.length) return null;
 
   const titleLower = title.toLowerCase();
   const artistLower = artist.toLowerCase();
-  const exact = items2.find(t =>
+  const exact = items.find(t =>
     t.name.toLowerCase() === titleLower &&
-    t.artists.some(a => a.name.toLowerCase().includes(artistLower) || artistLower.includes(a.name.toLowerCase()))
+    t.artists.some(a =>
+      a.name.toLowerCase().includes(artistLower) ||
+      artistLower.includes(a.name.toLowerCase())
+    )
   );
-  const titleOnly = items2.find(t => t.name.toLowerCase() === titleLower);
-  return exact ?? titleOnly ?? items2[0];
+  const titleOnly   = items.find(t => t.name.toLowerCase() === titleLower);
+  const partial     = items.find(t =>
+    t.name.toLowerCase().includes(titleLower) ||
+    titleLower.includes(t.name.toLowerCase())
+  );
+  return exact ?? titleOnly ?? partial ?? items[0];
 }
 
 // ── YouTube: search by title+artist, get stats ───────────────
