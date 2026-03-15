@@ -258,61 +258,115 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
         </div>
       </div>
 
-      {/* Title Card */}
-      <div className="glass-card rounded-2xl p-6">
-        <div className="flex items-start gap-4">
-          {/* Artwork — clickable for lightbox */}
-          <div
-            className="w-20 h-20 rounded-xl flex-shrink-0 overflow-hidden bg-zinc-900 border border-white/10 relative group cursor-pointer"
-            onClick={() => { if (artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink)) setLightboxOpen(true); }}
-          >
-            {artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink) ? (
+      {/* Hero — full-bleed cover art blur behind release info */}
+      {(() => {
+        const heroSrc = artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink);
+        return (
+          <div className="relative rounded-2xl overflow-hidden" style={{ minHeight: 180 }}>
+            {/* Blurred cover art background */}
+            {heroSrc ? (
               <>
-                <img src={artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink)!} alt="Cover art"
-                  className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <ZoomIn className="w-5 h-5 text-white" />
+                <img
+                  src={heroSrc}
+                  alt=""
+                  aria-hidden
+                  className="absolute inset-0 w-full h-full object-cover"
+                  style={{ filter: 'blur(32px)', transform: 'scale(1.15)', opacity: 0.35 }}
+                  onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
+                {/* Dark gradient overlay — stronger at bottom for text legibility */}
+                <div className="absolute inset-0" style={{
+                  background: 'linear-gradient(160deg, rgba(9,9,11,0.55) 0%, rgba(9,9,11,0.82) 60%, rgba(9,9,11,0.96) 100%)'
+                }} />
+              </>
+            ) : (
+              <div className="absolute inset-0 bg-zinc-900/60" />
+            )}
+
+            {/* Content — sits above blur */}
+            <div className="relative z-10 p-6 flex items-start gap-5">
+              {/* Artwork thumbnail — clickable for lightbox */}
+              <div
+                className="flex-shrink-0 cursor-pointer group"
+                onClick={() => { if (heroSrc) setLightboxOpen(true); }}
+              >
+                <div className="w-24 h-24 rounded-xl overflow-hidden border border-white/15 shadow-2xl relative">
+                  {heroSrc ? (
+                    <>
+                      <img
+                        src={heroSrc}
+                        alt="Cover art"
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <ZoomIn className="w-5 h-5 text-white" />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="w-full h-full bg-zinc-800 flex items-center justify-center">
+                      <Music className="w-8 h-8 text-zinc-600" />
+                    </div>
+                  )}
                 </div>
-              </>
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Music className="w-8 h-8 text-zinc-600" />
               </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            {editing ? (
-              <div className="space-y-3">
-                <input type="text" value={releaseTitle} onChange={e => setReleaseTitle(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-lg font-bold" placeholder="Release Title" />
-                <input type="text" value={mainArtist} onChange={e => setMainArtist(e.target.value)} className="input-dark w-full px-3 py-2 rounded-lg text-sm" placeholder="Main Artist" />
+
+              {/* Text */}
+              <div className="flex-1 min-w-0">
+                {editing ? (
+                  <div className="space-y-2.5">
+                    <input
+                      type="text"
+                      value={releaseTitle}
+                      onChange={e => setReleaseTitle(e.target.value)}
+                      className="input-dark w-full px-3 py-2 rounded-lg text-lg font-bold bg-black/40"
+                      placeholder="Release Title"
+                    />
+                    <input
+                      type="text"
+                      value={mainArtist}
+                      onChange={e => setMainArtist(e.target.value)}
+                      className="input-dark w-full px-3 py-2 rounded-lg text-sm bg-black/40"
+                      placeholder="Main Artist"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <h2 className="text-2xl font-bold leading-tight drop-shadow-lg">
+                      {formatDisplayTitle(releaseTitle, releaseType, tracks, features)}
+                    </h2>
+                    <p className="text-zinc-300 mt-0.5 truncate drop-shadow">
+                      {formatArtists(mainArtist, collaborations)}
+                    </p>
+                  </>
+                )}
+
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <StatusBadge status={status} />
+                  <ReleaseTypeBadge type={releaseType} />
+                  {priority !== 'normal' && (
+                    <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${
+                      priority === 'urgent'
+                        ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                        : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+                    }`}>
+                      <Flag className="w-2.5 h-2.5" />
+                      {priority === 'urgent' ? 'URGENT' : 'LOW'}
+                    </span>
+                  )}
+                  {initialRelease.releaseDate && (
+                    <span className="text-xs text-zinc-400 flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      {initialRelease.releaseDate}
+                    </span>
+                  )}
+                  <span className="text-xs text-zinc-600 font-mono">{initialRelease.id}</span>
+                </div>
               </div>
-            ) : (
-              <>
-                <h2 className="text-2xl font-bold truncate">
-                  {formatDisplayTitle(releaseTitle, releaseType, tracks, features)}
-                </h2>
-                <p className="text-zinc-400 truncate">
-                  {formatArtists(mainArtist, collaborations)}
-                </p>
-              </>
-            )}
-            <div className="flex flex-wrap gap-2 mt-2">
-              <StatusBadge status={status} />
-              <ReleaseTypeBadge type={releaseType} />
-              {priority !== 'normal' && (
-                <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${
-                  priority === 'urgent' ? 'bg-red-500/15 text-red-400 border-red-500/30' : 'bg-zinc-800 text-zinc-500 border-zinc-700'
-                }`}>
-                  <Flag className="w-2.5 h-2.5" />
-                  {priority === 'urgent' ? 'URGENT' : 'LOW'}
-                </span>
-              )}
-              <span className="text-xs text-zinc-500">ID: <span className="font-mono text-zinc-400">{initialRelease.id}</span></span>
             </div>
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Lightbox */}
       {lightboxOpen && artworkSrc(coverArtImageUrl || initialRelease.coverArtImageUrl, coverArtDriveLink) && (

@@ -122,7 +122,19 @@ async function getSpotifyToken(clientId: string, clientSecret: string): Promise<
     body: JSON.stringify({ clientId: id, clientSecret: secret }),
   });
 
-  const d = await res.json() as Record<string, unknown>;
+  // Read as text first — if Vercel returns an HTML error page, res.json() would throw
+  const text = await res.text();
+  let d: Record<string, unknown>;
+  try {
+    d = JSON.parse(text);
+  } catch {
+    // Got HTML — API function not deployed or returning 404/500
+    throw new Error(
+      `Spotify: API route not reachable (got HTML, status ${res.status}). ` +
+      `Make sure /api/spotify-token is deployed on Vercel. ` +
+      `Visit your-app.vercel.app/api/ping to test.`
+    );
+  }
 
   if (!res.ok || d.error) {
     const desc = (d.error_description as string) || '';
