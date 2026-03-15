@@ -123,7 +123,7 @@ async function fetchSpotifyTrack(
 ): Promise<SpotifyTrack | null> {
   const token = await getSpotifyToken(clientId, clientSecret);
 
-  // 1. Try exact ISRC lookup
+  // 1. Try exact ISRC lookup — most reliable
   if (isrc) {
     const r = await fetch(
       `https://api.spotify.com/v1/search?q=isrc:${encodeURIComponent(isrc)}&type=track&limit=1`,
@@ -134,19 +134,26 @@ async function fetchSpotifyTrack(
     if (items.length) return items[0];
   }
 
-  // 2. Fall back: title + artist text search
-  const q = encodeURIComponent(`track:${title} artist:${artist}`);
+  // 2. Plain text search — more reliable than field filters for non-English titles
+  const q = encodeURIComponent(`${title} ${artist}`);
   const r2 = await fetch(
-    `https://api.spotify.com/v1/search?q=${q}&type=track&limit=3`,
+    `https://api.spotify.com/v1/search?q=${q}&type=track&limit=5&market=US`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const d2 = await r2.json();
   const items2: SpotifyTrack[] = d2?.tracks?.items ?? [];
   if (!items2.length) return null;
 
-  // Pick best match — prefer exact title match
-  const exact = items2.find(t => t.name.toLowerCase() === title.toLowerCase());
-  return exact ?? items2[0];
+  // Best match: exact title + artist overlap
+  const titleLower = title.toLowerCase();
+  const artistLower = artist.toLowerCase();
+  const exact = items2.find(t =>
+    t.name.toLowerCase() === titleLower &&
+    t.artists.some(a => a.name.toLowerCase().includes(artistLower) || artistLower.includes(a.name.toLowerCase()))
+  );
+  // Second best: title match only
+  const titleOnly = items2.find(t => t.name.toLowerCase() === titleLower);
+  return exact ?? titleOnly ?? items2[0];
 }
 
 // ── YouTube: search by title+artist, get stats ───────────────
