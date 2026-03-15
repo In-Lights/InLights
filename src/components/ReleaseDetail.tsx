@@ -10,6 +10,7 @@ import InternalComments from './InternalComments';
 import SpotifyPitchGenerator from './SpotifyPitchGenerator';
 import TrackMetrics from './TrackMetrics';
 import SpotifyFetch from './SpotifyFetch';
+import DeliveryTracker from './DeliveryTracker';
 
 function fmtDate(s: string): string {
   if (!s) return '';
@@ -677,6 +678,8 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
 
         {/* Admin Sidebar */}
         <div className="space-y-6">
+          {/* Delivery Pipeline Tracker */}
+          <DeliveryTracker release={initialRelease} canEdit={can.canChangeStatus} />
           {/* Audio Player */}
           <AudioPlayer tracks={tracks} releaseTitle={formatDisplayTitle(releaseTitle, releaseType, tracks, features)} />
           {/* Spotify Pitch Generator */}

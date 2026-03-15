@@ -2,6 +2,20 @@ export type ReleaseType = 'single' | 'ep' | 'album';
 export type ReleaseStatus = 'pending' | 'approved' | 'scheduled' | 'released' | 'rejected';
 export type ReleasePriority = 'urgent' | 'normal' | 'low';
 
+export type DeliveryStageId =
+  | 'submitted'
+  | 'approved'
+  | 'assets_collected'
+  | 'sent_to_distributor'
+  | 'distributed'
+  | 'live';
+
+export interface DeliveryStage {
+  id: DeliveryStageId;
+  completedAt?: string;   // ISO date string — set when admin marks it done
+  note?: string;          // optional admin note per stage
+}
+
 export interface ChecklistItem {
   id: string;
   label: string;
@@ -89,6 +103,7 @@ export interface ReleaseSubmission {
   upc?: string;
   priority?: ReleasePriority;
   checklist?: ChecklistItem[];
+  deliveryPipeline?: DeliveryStage[];
 }
 
 export interface AdminSettings {

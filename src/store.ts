@@ -310,6 +310,7 @@ function rowToRelease(row: Record<string, unknown>): ReleaseSubmission {
     upc: (row.upc as string) ?? undefined,
     priority: (row.priority as ReleaseSubmission['priority']) ?? 'normal',
     checklist: (row.checklist as ReleaseSubmission['checklist']) ?? [],
+    deliveryPipeline: (row.delivery_pipeline as ReleaseSubmission['deliveryPipeline']) ?? [],
   };
 }
 
@@ -336,6 +337,7 @@ function releaseToRow(release: Partial<ReleaseSubmission> & { id?: string }) {
   if (release.upc !== undefined) row.upc = release.upc;
   if (release.priority !== undefined) row.priority = release.priority;
   if (release.checklist !== undefined) row.checklist = release.checklist;
+  if (release.deliveryPipeline !== undefined) row.delivery_pipeline = release.deliveryPipeline;
   return row;
 }
 
