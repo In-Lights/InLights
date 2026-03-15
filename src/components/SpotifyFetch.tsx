@@ -513,14 +513,4 @@ export default function SpotifyFetch({ tracks, mainArtist, releaseTitle, setting
       )}
     </div>
   );
-
-  function CreditRow({ label, values }: { label: string; values?: string[] }) {
-    if (!values?.length) return null;
-    return (
-      <div className="flex items-baseline gap-2 text-[11px]">
-        <span className="text-zinc-600 w-20 flex-shrink-0 text-right">{label}</span>
-        <span className="text-zinc-300 font-medium">{values.join(', ')}</span>
-      </div>
-    );
-  }
 }
