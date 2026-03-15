@@ -61,6 +61,8 @@ export interface Track {
   masteredBy: string;
   isrc?: string;
   additionalCredits?: { role: string; name: string }[];
+  spotifyPreviewUrl?: string | null;  // 30s MP3 from Spotify — preferred over Drive WAV if available
+  spotifyTrackId?: string;            // Spotify track ID for deep-linking
 }
 
 export interface ReleaseSubmission {

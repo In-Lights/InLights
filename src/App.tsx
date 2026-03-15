@@ -226,6 +226,7 @@ function App() {
               onRefresh={() => setRefreshKey(k => k + 1)}
               pendingReminderDays={adminSettings.pendingReminderDays ?? 2}
               releaseReminderDays={adminSettings.releaseReminderDays ?? 7}
+              adminSettings={adminSettings}
               statusLabels={{
                 pending: adminSettings.statusLabelPending || 'Pending',
                 approved: adminSettings.statusLabelApproved || 'Approved',

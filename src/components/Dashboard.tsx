@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Search, Download, Trash2, Eye, Filter, Music2, Clock, CheckCircle, Calendar, XCircle, BarChart3, Loader2, RefreshCw, Flag, CheckSquare, Square, ChevronDown, ShieldOff, Bell, Plus } from 'lucide-react';
-import { ReleaseSubmission, ReleaseStatus } from '../types';
+import { ReleaseSubmission, ReleaseStatus, AdminSettings } from '../types';
 import { getSubmissions, updateSubmissionStatus, deleteSubmission, exportToCSV, getPendingReminders, getUpcomingReleaseReminders } from '../store';
 import { ReleaseTypeBadge } from './ui/Badge';
 import ExportPDFButton from './ExportPDF';
@@ -14,6 +14,7 @@ interface Props {
   pendingReminderDays?: number;
   releaseReminderDays?: number;
   statusLabels?: { pending: string; approved: string; scheduled: string; released: string; rejected: string };
+  adminSettings?: AdminSettings;
 }
 
 
@@ -49,7 +50,7 @@ function formatTitle(release: ReleaseSubmission): string {
   return `${release.releaseTitle}${featSuffix}`;
 }
 
-export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendingReminderDays = 2, releaseReminderDays = 7, statusLabels }: Props) {
+export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendingReminderDays = 2, releaseReminderDays = 7, statusLabels, adminSettings }: Props) {
   const SL = statusLabels ?? { pending: 'Pending', approved: 'Approved', scheduled: 'Scheduled', released: 'Released', rejected: 'Rejected' };
   const { role, can } = usePermissions();
   const [statusFilter, setStatusFilter] = useState<ReleaseStatus | 'all'>('all');
@@ -431,6 +432,7 @@ export default function Dashboard({ onViewRelease, refreshKey, onRefresh, pendin
         <ManualReleaseModal
           onClose={() => setShowAddModal(false)}
           onSaved={() => { setShowAddModal(false); onRefresh(); }}
+          adminSettings={adminSettings}
         />
       )}
     </div>

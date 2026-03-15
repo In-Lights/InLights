@@ -9,6 +9,7 @@ import { usePermissions } from '../utils/permissions';
 import InternalComments from './InternalComments';
 import SpotifyPitchGenerator from './SpotifyPitchGenerator';
 import TrackMetrics from './TrackMetrics';
+import SpotifyFetch from './SpotifyFetch';
 
 function fmtDate(s: string): string {
   if (!s) return '';
@@ -678,6 +679,16 @@ export default function ReleaseDetail({ release: initialRelease, onBack, comment
           <AudioPlayer tracks={tracks} releaseTitle={formatDisplayTitle(releaseTitle, releaseType, tracks, features)} />
           {/* Spotify Pitch Generator */}
           <SpotifyPitchGenerator release={initialRelease} />
+          {/* Grab track data from Spotify/YouTube */}
+          {adminSettings && (adminSettings.spotifyClientId || adminSettings.youtubeApiKey) && (
+            <SpotifyFetch
+              tracks={tracks}
+              mainArtist={mainArtist}
+              releaseTitle={releaseTitle}
+              settings={adminSettings}
+              onApply={(updatedTracks) => setTracks(updatedTracks)}
+            />
+          )}
           {/* Streaming Metrics */}
           {adminSettings && (
             <TrackMetrics release={initialRelease} settings={adminSettings} />

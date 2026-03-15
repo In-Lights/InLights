@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { X, Plus, Trash2, Loader2, Save, ChevronDown, ChevronUp } from 'lucide-react';
-import { Track, Collaborator, ReleaseType, RELEASE_TYPE_LIMITS, GENRES, ReleaseSubmission } from '../types';
+import { Track, Collaborator, ReleaseType, RELEASE_TYPE_LIMITS, GENRES, ReleaseSubmission, AdminSettings } from '../types';
 import { addSubmission, updateSubmission } from '../store';
+import SpotifyFetch from './SpotifyFetch';
 
 const emptyTrack = (): Track => ({
   title: '', previewStart: '0:00', previewEnd: '0:30', explicit: false,
@@ -19,9 +20,10 @@ interface Props {
   onSaved: (id: string) => void;
   /** Pass an existing release to edit it instead of creating new */
   existing?: ReleaseSubmission;
+  adminSettings?: AdminSettings;
 }
 
-export default function ManualReleaseModal({ onClose, onSaved, existing }: Props) {
+export default function ManualReleaseModal({ onClose, onSaved, existing, adminSettings }: Props) {
   const isEdit = !!existing;
 
   // Artist
@@ -281,6 +283,17 @@ export default function ManualReleaseModal({ onClose, onSaved, existing }: Props
               </div>
             </div>
           </div>
+
+          {/* Grab from Spotify / YouTube */}
+          {adminSettings && (adminSettings.spotifyClientId || adminSettings.youtubeApiKey) && (
+            <SpotifyFetch
+              tracks={tracks}
+              mainArtist={mainArtist}
+              releaseTitle={releaseTitle}
+              settings={adminSettings}
+              onApply={(updatedTracks) => setTracks(updatedTracks)}
+            />
+          )}
 
           {/* Tracks */}
           <div className="space-y-3">

@@ -49,14 +49,15 @@ import { ReleaseSubmission, Track, AdminSettings } from '../types';
 
 // ── Types ────────────────────────────────────────────────────
 
-interface SpotifyTrack {
+export interface SpotifyTrack {
   id: string;
   name: string;
   artists: { name: string }[];
-  album: { name: string; release_date: string };
-  popularity: number;       // 0–100 (recency-weighted, not raw streams)
+  album: { name: string; release_date: string; images: { url: string }[] };
+  popularity: number;
   external_urls: { spotify: string };
   duration_ms: number;
+  preview_url: string | null;
 }
 
 interface YouTubeResult {
@@ -230,7 +231,7 @@ function popularityLabel(p: number): string {
   return 'Minimal';
 }
 
-// ── Sub-components ───────────────────────────────────────────
+export { getSpotifyToken, fetchSpotifyTrack };
 
 function PlatformCard({
   icon, label, color, loading, error, children, link, linkLabel,
