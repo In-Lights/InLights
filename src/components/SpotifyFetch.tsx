@@ -421,7 +421,6 @@ export default function SpotifyFetch({
       if (hasYouTube) {
         setFetchStatus(`Track ${i + 1}/${tracks.length}: ${trackTitle} — YouTube…`);
         try {
-          // Build full search string: "Title Artist feat. Feature1, Feature2"
           const featStr = result.trackFeatures.length
             ? ` feat. ${result.trackFeatures.join(', ')}`
             : '';
@@ -433,6 +432,51 @@ export default function SpotifyFetch({
         } catch (e) {
           result.youtubeError = e instanceof Error ? e.message : 'YouTube failed';
         }
+      }
+
+      // ── 3b. Spotify retry using Latin name from YouTube title ─
+      // Arabic/non-Latin tracks are often on Spotify under their Latin transliteration.
+      // e.g. "بصحى" → YouTube title shows "BAS7A" → search Spotify for "BAS7A L'ASTRO"
+      if (!result.spotify && hasSpotify && result.youtube?.title && /[^\u0000-\u007F]/.test(trackTitle)) {
+        try {
+          // Extract the Latin segment from the YouTube title
+          // YouTube titles for Arabic tracks often look like: "آسترو - بصحى | L'ASTRO - BAS7A"
+          // Split on | or - and find the all-Latin segment
+          const ytTitle = result.youtube.title;
+          const segments = ytTitle.split(/[|\u2013\u2014]/).map((s: string) => s.trim());
+          const latinSegment = segments.find((s: string) =>
+            /^[a-zA-Z0-9\s'"\-&!?.,()[\]]+$/.test(s.trim()) && s.trim().length > 1
+          );
+          // Also try stripping the artist name to get just the track name
+          const latinTitle = latinSegment
+            ? latinSegment.replace(new RegExp(mainArtist.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim().replace(/^[-\s]+|[-\s]+$/g, '').trim()
+            : null;
+
+          if (latinTitle && latinTitle.length > 0) {
+            setFetchStatus(`Track ${i + 1}/${tracks.length}: retrying Spotify as "${latinTitle}"…`);
+            result.spotify = await fetchSpotifyTrack(
+              settings.spotifyClientId,
+              settings.spotifyClientSecret,
+              track.isrc, latinTitle, mainArtist
+            ) as typeof result.spotify;
+
+            if (result.spotify) {
+              const sp = result.spotify;
+              result.resolvedIsrc = track.isrc || sp.external_ids?.isrc;
+              if (sp.artists.length > 1) {
+                result.trackFeatures = sp.artists.slice(1).map((a: { name: string }) => a.name)
+                  .filter((n: string) => n.toLowerCase() !== mainArtist.toLowerCase());
+              }
+              if (i === 0 && sp.album?.images?.length && !currentRelease?.coverArtImageUrl) {
+                rPatch.coverArtImageUrl = sp.album.images[0].url;
+              }
+              if (i === 0 && sp.album?.release_date && !currentRelease?.releaseDate) {
+                rPatch.releaseDate = sp.album.release_date.slice(0, 10);
+              }
+              result.trackExplicit = sp.explicit;
+            }
+          }
+        } catch { /* silent — keep YouTube result */ }
       }
 
       // ── 4. Merge credits ─────────────────────────────────────
